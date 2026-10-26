@@ -107,3 +107,105 @@ html {
     transition: none;
   }
 }
+
+.register-page {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.register-background {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse at 4% 12%,
+      rgba(191, 219, 254, 0.65),
+      transparent 35%
+    ),
+    radial-gradient(
+      ellipse at 94% 75%,
+      rgba(221, 214, 254, 0.42),
+      transparent 34%
+    ),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 70%);
+}
+
+.register-gradient-text {
+  background: linear-gradient(110deg, #2563eb 10%, #7c3aed 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.register-card {
+  box-shadow:
+    0 24px 80px rgba(15, 23, 42, 0.07),
+    0 2px 8px rgba(15, 23, 42, 0.025);
+  transition:
+    box-shadow 250ms ease,
+    transform 250ms ease;
+}
+
+.register-card:hover {
+  box-shadow:
+    0 30px 90px rgba(15, 23, 42, 0.09),
+    0 3px 12px rgba(15, 23, 42, 0.035);
+}
+
+.register-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.register-input-wrap:focus-within {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+  background: #fff;
+}
+
+.register-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 12px 0;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.register-input::placeholder {
+  color: #94a3b8;
+}
+
+.register-input:-webkit-autofill,
+.register-input:-webkit-autofill:hover,
+.register-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #0f172a;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+.register-submit {
+  min-height: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .register-card,
+  .register-input-wrap,
+  .register-submit {
+    transition: none;
+  }
+}
