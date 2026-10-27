@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   CalendarDays,
@@ -11,8 +11,25 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import demoContacts from "../data/demo-contacts.json";
+import { authService } from "../services/authService";
+
+const navigate = useNavigate();
+
+const [currentUser, setCurrentUser] = useState(null);
+
+useEffect(() => {
+  authService.getMe().then(user => {
+    if (user) setCurrentUser(user);
+  });
+}, []);
+
+const handleLogout = () => {
+  authService.logout();
+  setCurrentUser(null);
+  navigate("/login");
+};
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -41,20 +58,6 @@ function getInitials(name) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
-}
-
-function getContactGroups(contacts) {
-  const sortedContacts = [...contacts].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-  );
-
-  return sortedContacts.reduce((groups, contact) => {
-    const letter = contact.name.trim().charAt(0).toUpperCase();
-    const key = /^[A-Z]$/.test(letter) ? letter : "#";
-    groups[key] ??= [];
-    groups[key].push(contact);
-    return groups;
-  }, {});
 }
 
 function formatFollowUp(date) {
@@ -235,10 +238,43 @@ function ContactModal({ onClose, onSave }) {
 }
 
 export default function Dashboard() {
-  const [contacts, setContacts] = useState(demoContacts);
+  const navigate = useNavigate();
+  const [currentUser, setCurrentUser] = useState(
+    () => authService.getUser() || { name: "User", email: "" }
+  );
+  const [contacts, setContacts] = useState(() => {
+    try {
+      const saved = localStorage.getItem("contactx_contacts");
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // fallback to demoContacts
+    }
+    return demoContacts;
+  });
   const [activeSection, setActiveSection] = useState("overview");
   const [search, setSearch] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("contactx_contacts", JSON.stringify(contacts));
+    } catch (e) {
+      console.error("Failed to save contacts:", e);
+    }
+  }, [contacts]);
+
+
+  useEffect(() => {
+    authService.getMe().then((user) => {
+      if (user) setCurrentUser(user);
+    });
+  }, []);
+
+  const handleLogout = () => {
+    authService.logout();
+    navigate("/login");
+  };
+
 
   const currentMonth = getLocalDateString().slice(0, 7);
   const today = getLocalDateString();
@@ -373,14 +409,34 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <span className="hidden text-xs text-slate-400 sm:block">
-                Demo data
-              </span>
+              <button
+                aria-label="Notifications"
+                className="relative rounded-xl p-2.5 text-slate-500 transition hover:bg-slate-100"
+                type="button"
+              >
+                <Bell size={19} />
+                {dueCount > 0 && (
+                  <span className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-white bg-rose-500" />
+                )}
+              </button>
+              <div className="hidden h-8 w-px bg-slate-200 sm:block" />
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
+                  A
+                </div>
+                <div className="hidden sm:block">
+                  <p className="text-xs font-bold text-slate-800">Alex Morgan</p>
+                  <p className="text-[11px] text-slate-400">Personal workspace</p>
+                </div>
+                <ChevronDown className="hidden text-slate-400 sm:block" size={15} />
+              </div>
               <Link
-                className="text-xs font-medium text-slate-500 transition hover:text-slate-800"
+                aria-label="Sign out"
+                className="ml-1 rounded-xl p-2.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                title="Sign out"
                 to="/login"
               >
-                Sign out
+                <LogOut size={17} />
               </Link>
             </div>
           </div>
@@ -407,11 +463,15 @@ export default function Dashboard() {
 
           <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-                {pageTitle}
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-blue-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                {formattedToday}
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-[34px]">
+                {getGreeting()}, {currentUser?.name ? currentUser.name.split(" ")[0] : "Friend"}
               </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Manage your contacts and keep track of follow-ups.
+              <p className="mt-2 text-sm text-slate-500 sm:text-base">
+                Here&apos;s what&apos;s happening with your relationships.
               </p>
             </div>
             <div className="flex shrink-0 gap-2">
@@ -701,9 +761,10 @@ export default function Dashboard() {
             </aside>
           </section>
 
-          <p className="mt-5 text-xs text-slate-400">
-            Demo data is temporary and resets when you refresh.
+          <p className="mt-7 text-center text-[11px] text-slate-400">
+            Demo workspace · Your changes stay in this page session
           </p>
+
         </div>
       </main>
 
