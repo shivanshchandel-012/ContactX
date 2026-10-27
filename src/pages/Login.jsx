@@ -10,19 +10,31 @@ import {
   LockKeyhole,
   ShieldCheck,
 } from "lucide-react";
+import { authService } from "../services/authService";
 
 export default function Login() {
   const location = useLocation();
   const navigate = useNavigate();
 
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => location.state?.registeredEmail || "");
+  const [prevEmail, setPrevEmail] = useState(location.state?.registeredEmail);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
 
   const message = location.state?.message;
 
-  const handleSubmit = (e) => {
+  if (location.state?.registeredEmail && location.state.registeredEmail !== prevEmail) {
+    setPrevEmail(location.state.registeredEmail);
+    setEmail(location.state.registeredEmail);
+    setPassword("");
+  }
+
+
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
@@ -38,8 +50,22 @@ export default function Login() {
       return;
     }
 
-    navigate("/dashboard");
+    setLoading(true);
+
+    try {
+      await authService.login({
+        email: trimmedEmail,
+        password,
+      });
+
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message || "Failed to sign in. Please verify your credentials.");
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   return (
     <main className="register-page min-h-screen bg-white text-slate-900">
@@ -130,7 +156,7 @@ export default function Login() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
               {/* Email */}
               <div>
                 <label
@@ -147,7 +173,7 @@ export default function Login() {
                     id="login-email"
                     name="email"
                     type="email"
-                    autoComplete="email"
+                    autoComplete="off"
                     placeholder="you@example.com"
                     value={email}
                     onChange={(e) => {
@@ -179,7 +205,7 @@ export default function Login() {
                     id="login-password"
                     name="password"
                     type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
+                    autoComplete="new-password"
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => {
@@ -190,6 +216,7 @@ export default function Login() {
                     required
                     className="register-input"
                   />
+
 
                   <button
                     type="button"
@@ -220,14 +247,18 @@ export default function Login() {
 
               <button
                 type="submit"
-                className="register-submit group flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:bg-blue-700"
+                disabled={loading}
+                className="register-submit group flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Sign in
-                <ArrowRight
-                  size={17}
-                  className="transition-transform group-hover:translate-x-1"
-                />
+                {loading ? "Signing in..." : "Sign in"}
+                {!loading && (
+                  <ArrowRight
+                    size={17}
+                    className="transition-transform group-hover:translate-x-1"
+                  />
+                )}
               </button>
+
             </form>
 
             <div className="my-6 flex items-center gap-3">

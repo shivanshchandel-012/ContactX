@@ -12,8 +12,8 @@ import {
   CheckCircle2,
   Users,
   ShieldCheck,
-  Zap,
 } from "lucide-react";
+import { authService } from "../services/authService";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -63,24 +63,29 @@ const Register = () => {
       return;
     }
 
-    // UI-only registration until your backend API is connected.
     setLoading(true);
 
     try {
-      // Replace this block with your registration API request.
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      await authService.register({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+      });
 
       navigate("/login", {
         state: {
-          message: "Registration UI tested. Connect your backend to create an account.",
+          message: "Account created successfully! Please sign in with your credentials.",
+          registeredEmail: formData.email.trim(),
         },
       });
-    } catch {
-      setError("Something went wrong. Please try again.");
+
+    } catch (err) {
+      setError(err.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
+
 
   const passwordChecks = [
     {
