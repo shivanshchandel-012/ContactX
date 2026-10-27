@@ -7,9 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node server/server.js",
-    "server:dev": "node --watch server/server.js",
-    "dev:all": "concurrently -n \"client,server\" -c \"cyan,magenta\" \"vite\" \"node --watch server/server.js\""
+    "server": "node backend/server.js",
+    "server:dev": "node --watch backend/server.js",
+    "dev:all": "concurrently -n \"client,server\" -c \"cyan,magenta\" \"vite\" \"node --watch backend/server.js\""
   },
   "dependencies": {
     "lucide-react": "^1.61.0",

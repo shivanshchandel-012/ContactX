@@ -21,6 +21,21 @@ import { Link, useNavigate } from "react-router-dom";
 import demoContacts from "../data/demo-contacts.json";
 import { authService } from "../services/authService";
 
+const navigate = useNavigate();
+
+const [currentUser, setCurrentUser] = useState(null);
+
+useEffect(() => {
+  authService.getMe().then(user => {
+    if (user) setCurrentUser(user);
+  });
+}, []);
+
+const handleLogout = () => {
+  authService.logout();
+  setCurrentUser(null);
+  navigate("/login");
+};
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
