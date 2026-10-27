@@ -1,0 +1,10 @@
+[
+  {
+    "id": "1",
+    "name": "Alex Morgan",
+    "email": "alex@contactx.com",
+    "password": "$2b$10$CcHXFl8NinlYTU8CJuBmp.RALIi5c2leifoWoLCh.IDfe05ufRHq6",
+    "avatarColor": "blue",
+    "createdAt": "2026-10-27T04:53:36.633Z"
+  }
+]
