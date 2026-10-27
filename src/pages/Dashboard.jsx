@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowUpRight,
@@ -17,8 +17,10 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import demoContacts from "../data/demo-contacts.json";
+import { authService } from "../services/authService";
+
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -64,6 +66,14 @@ function getInitials(name) {
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 }
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 
 function formatFollowUp(date) {
   if (!date) return "";
@@ -244,10 +254,43 @@ function ContactModal({ onClose, onSave }) {
 }
 
 export default function Dashboard() {
-  const [contacts, setContacts] = useState(demoContacts);
+  const navigate = useNavigate();
+  const [currentUser, setCurrentUser] = useState(
+    () => authService.getUser() || { name: "User", email: "" }
+  );
+  const [contacts, setContacts] = useState(() => {
+    try {
+      const saved = localStorage.getItem("contactx_contacts");
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // fallback to demoContacts
+    }
+    return demoContacts;
+  });
   const [activeSection, setActiveSection] = useState("overview");
   const [search, setSearch] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("contactx_contacts", JSON.stringify(contacts));
+    } catch (e) {
+      console.error("Failed to save contacts:", e);
+    }
+  }, [contacts]);
+
+
+  useEffect(() => {
+    authService.getMe().then((user) => {
+      if (user) setCurrentUser(user);
+    });
+  }, []);
+
+  const handleLogout = () => {
+    authService.logout();
+    navigate("/login");
+  };
+
 
   const currentMonth = getLocalDateString().slice(0, 7);
   const today = getLocalDateString();
@@ -427,22 +470,27 @@ export default function Dashboard() {
               <div className="hidden h-8 w-px bg-slate-200 sm:block" />
               <div className="flex items-center gap-2">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
-                  A
+                  {getInitials(currentUser?.name || "Alex Morgan")}
                 </div>
                 <div className="hidden sm:block">
-                  <p className="text-xs font-bold text-slate-800">Alex Morgan</p>
-                  <p className="text-[11px] text-slate-400">Personal workspace</p>
+                  <p className="text-xs font-bold text-slate-800">
+                    {currentUser?.name || "Alex Morgan"}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {currentUser?.email || "Personal workspace"}
+                  </p>
                 </div>
                 <ChevronDown className="hidden text-slate-400 sm:block" size={15} />
               </div>
-              <Link
+              <button
+                type="button"
                 aria-label="Sign out"
                 className="ml-1 rounded-xl p-2.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 title="Sign out"
-                to="/login"
+                onClick={handleLogout}
               >
                 <LogOut size={17} />
-              </Link>
+              </button>
             </div>
           </div>
         </header>
@@ -473,8 +521,9 @@ export default function Dashboard() {
                 {formattedToday}
               </div>
               <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-[34px]">
-                Good morning, Alex
+                {getGreeting()}, {currentUser?.name ? currentUser.name.split(" ")[0] : "Friend"}
               </h1>
+
               <p className="mt-2 text-sm text-slate-500 sm:text-base">
                 Here&apos;s what&apos;s happening with your relationships.
               </p>
@@ -821,8 +870,9 @@ export default function Dashboard() {
           </section>
 
           <p className="mt-7 text-center text-[11px] text-slate-400">
-            Demo workspace · Your changes stay in this page session
+            ContactX Workspace · Contacts saved securely
           </p>
+
         </div>
       </main>
 
