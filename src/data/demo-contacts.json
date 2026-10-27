@@ -39,6 +39,22 @@
     "lastContact": "Oct 24, 2026",
     "followUp": "2026-10-29",
     "createdAt": "2026-09-27T09:00:00.000Z",
-    "color": "emerald"
+    "color": "emerald",
+
+
+  },
+  {
+    "id": 4,
+    "name": "Demi Wilkinson",
+    "email": "demi@layers.com",
+    "phone": "(555) 511-2470",
+    "company": "Layers",
+    "role": "UX Researcher",
+    "tags": ["Personal"],
+    "favorite": false,
+    "lastContact": "Oct 22, 2026",
+    "followUp": "",
+    "color": "pink"
+
   }
 ]
