@@ -1,0 +1,83 @@
+[
+  {
+    "id": 1,
+    "name": "Olivia Rhye",
+    "email": "olivia@untitledui.com",
+    "phone": "(555) 201-8472",
+    "company": "Untitled UI",
+    "role": "Product Designer",
+    "tags": ["Design", "Customer"],
+    "favorite": true,
+    "lastContact": "Today",
+    "followUp": "2026-10-27",
+    "createdAt": "2026-10-21T09:00:00.000Z",
+    "color": "violet"
+  },
+  {
+    "id": 2,
+    "name": "Phoenix Baker",
+    "email": "phoenix@acme.com",
+    "phone": "(555) 302-9154",
+    "company": "Acme Inc.",
+    "role": "Engineering Lead",
+    "tags": ["Work", "Partner"],
+    "favorite": false,
+    "lastContact": "Yesterday",
+    "followUp": "2026-10-28",
+    "createdAt": "2026-10-18T09:00:00.000Z",
+    "color": "amber"
+  },
+  {
+    "id": 3,
+    "name": "Lana Steiner",
+    "email": "lana@circooles.com",
+    "phone": "(555) 410-6831",
+    "company": "Circooles",
+    "role": "Marketing Manager",
+    "tags": ["Marketing"],
+    "favorite": true,
+    "lastContact": "Oct 24, 2026",
+    "followUp": "2026-10-29",
+    "createdAt": "2026-09-27T09:00:00.000Z",
+    "color": "emerald"
+  },
+  {
+    "id": 4,
+    "name": "Demi Wilkinson",
+    "email": "demi@layers.com",
+    "phone": "(555) 511-2470",
+    "company": "Layers",
+    "role": "UX Researcher",
+    "tags": ["Personal"],
+    "favorite": false,
+    "lastContact": "Oct 22, 2026",
+    "followUp": "",
+    "color": "pink"
+  },
+  {
+    "id": 5,
+    "name": "Candice Wu",
+    "email": "candice@techcorp.com",
+    "phone": "(555) 614-8029",
+    "company": "TechCorp",
+    "role": "People Operations",
+    "tags": ["Work"],
+    "favorite": false,
+    "lastContact": "Oct 20, 2026",
+    "followUp": "",
+    "color": "blue"
+  },
+  {
+    "id": 6,
+    "name": "Natali Craig",
+    "email": "natali@form.com",
+    "phone": "(555) 715-9360",
+    "company": "Form & Field",
+    "role": "Founder",
+    "tags": ["Customer", "Partner"],
+    "favorite": true,
+    "lastContact": "Oct 18, 2026",
+    "followUp": "",
+    "color": "rose"
+  }
+]
