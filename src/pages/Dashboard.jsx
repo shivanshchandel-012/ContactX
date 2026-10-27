@@ -1,19 +1,13 @@
 import { useMemo, useState } from "react";
 import {
   ArrowDownToLine,
-  ArrowUpRight,
-  Bell,
-  BriefcaseBusiness,
   CalendarDays,
   Check,
-  ChevronDown,
   Clock3,
   Heart,
   LayoutDashboard,
-  LogOut,
   Plus,
   Search,
-  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -25,22 +19,6 @@ const navigation = [
   { id: "contacts", label: "All contacts", icon: Users },
   { id: "favorites", label: "Favourites", icon: Heart },
   { id: "followups", label: "Follow-ups", icon: CalendarDays },
-];
-
-const avatarColors = {
-  violet: "bg-violet-100 text-violet-700",
-  amber: "bg-amber-100 text-amber-700",
-  emerald: "bg-emerald-100 text-emerald-700",
-  pink: "bg-pink-100 text-pink-700",
-  blue: "bg-blue-100 text-blue-700",
-  rose: "bg-rose-100 text-rose-700",
-};
-
-const tagColors = [
-  "bg-blue-50 text-blue-700",
-  "bg-violet-50 text-violet-700",
-  "bg-emerald-50 text-emerald-700",
-  "bg-amber-50 text-amber-700",
 ];
 
 function getLocalDateString(date = new Date()) {
@@ -63,6 +41,20 @@ function getInitials(name) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+function getContactGroups(contacts) {
+  const sortedContacts = [...contacts].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+
+  return sortedContacts.reduce((groups, contact) => {
+    const letter = contact.name.trim().charAt(0).toUpperCase();
+    const key = /^[A-Z]$/.test(letter) ? letter : "#";
+    groups[key] ??= [];
+    groups[key].push(contact);
+    return groups;
+  }, {});
 }
 
 function formatFollowUp(date) {
@@ -154,7 +146,6 @@ function ContactModal({ onClose, onSave }) {
       >
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-sm font-semibold text-blue-600">YOUR NETWORK</p>
             <h2
               className="mt-1 text-2xl font-bold tracking-tight text-slate-900"
               id="add-contact-title"
@@ -162,7 +153,7 @@ function ContactModal({ onClose, onSave }) {
               Add a contact
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Keep the people who matter close.
+              Add the details you want to keep on hand.
             </p>
           </div>
           <button
@@ -252,12 +243,6 @@ export default function Dashboard() {
   const currentMonth = getLocalDateString().slice(0, 7);
   const today = getLocalDateString();
   const weekAhead = getWeekAhead();
-  const formattedToday = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-
   const dueCount = contacts.filter(
     (contact) => contact.followUp && contact.followUp <= today,
   ).length;
@@ -290,8 +275,9 @@ export default function Dashboard() {
     });
   }, [activeSection, contacts, search, weekAhead]);
 
-  const visibleContacts =
-    activeSection === "overview" ? filteredContacts.slice(0, 5) : filteredContacts;
+  const contactGroups = getContactGroups(filteredContacts);
+  const availableLetters = new Set(Object.keys(contactGroups));
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
   function addContact(contact) {
     setContacts((current) => [
@@ -319,25 +305,24 @@ export default function Dashboard() {
     navigation.find((item) => item.id === activeSection)?.label ?? "Overview";
 
   return (
-    <div className="min-h-screen bg-[#f7f9fc] text-slate-900">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-slate-200/80 bg-white px-5 py-6 lg:flex">
+    <div className="min-h-screen bg-[#f5f6f8] text-slate-900">
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col border-r border-slate-200 bg-white px-4 py-5 lg:flex">
         <Link
           aria-label="ContactX home"
-          className="px-2 text-2xl font-extrabold tracking-tight"
+          className="px-3 text-xl font-bold tracking-tight"
           to="/"
         >
           Contact<span className="text-blue-600">X</span>
         </Link>
 
-        <div className="mt-10 px-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Workspace
+        <nav aria-label="Main navigation" className="mt-9 space-y-1">
+          <p className="mb-2 px-3 text-[11px] font-semibold text-slate-400">
+            WORKSPACE
           </p>
-          <nav aria-label="Main navigation" className="mt-3 space-y-1">
             {navigation.map(({ id, label, icon: Icon }) => (
               <button
                 aria-current={activeSection === id ? "page" : undefined}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
                   activeSection === id
                     ? "bg-blue-50 text-blue-700"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
@@ -355,106 +340,60 @@ export default function Dashboard() {
                 )}
               </button>
             ))}
-          </nav>
-        </div>
+        </nav>
 
-        <div className="mt-9 px-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Your lists
-          </p>
-          <div className="mt-4 space-y-3">
-            {[
-              ["Work", "bg-blue-500"],
-              ["Personal", "bg-violet-500"],
-              ["Customers", "bg-emerald-500"],
-            ].map(([label, color]) => (
-              <div
-                className="flex items-center gap-3 text-sm text-slate-600"
-                key={label}
-              >
-                <span className={`h-2 w-2 rounded-full ${color}`} />
-                {label}
-              </div>
-            ))}
+        <div className="mt-auto border-t border-slate-100 px-2 pt-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+              D
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-slate-800">
+                Demo account
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">Local workspace</p>
+            </div>
           </div>
-        </div>
-
-        <div className="mt-auto rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-violet-50 p-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm">
-            <Sparkles size={17} />
-          </div>
-          <p className="mt-3 text-sm font-bold text-slate-800">
-            Make every connection count.
-          </p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Your people, details, and next steps—all in one place.
-          </p>
         </div>
       </aside>
 
-      <main className="min-h-screen lg:pl-64">
-        <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-          <div className="mx-auto flex h-[72px] max-w-[1500px] items-center justify-between gap-4 px-4 sm:px-7 lg:px-10">
+      <main className="min-h-screen lg:pl-60">
+        <header className="border-b border-slate-200 bg-white">
+          <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-7 lg:px-9">
             <div className="flex min-w-0 items-center gap-3">
               <Link
                 aria-label="ContactX home"
-                className="text-xl font-extrabold tracking-tight lg:hidden"
+                className="text-lg font-bold tracking-tight lg:hidden"
                 to="/"
               >
                 Contact<span className="text-blue-600">X</span>
               </Link>
-              <div className="hidden text-sm text-slate-400 sm:block">
-                Workspace <span className="mx-1.5">/</span>
-                <span className="font-semibold text-slate-700">
-                  {pageTitle}
-                </span>
-              </div>
-              <span className="truncate text-sm font-semibold text-slate-700 sm:hidden">
+              <span className="hidden truncate text-sm font-medium text-slate-600 lg:block">
                 {pageTitle}
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <button
-                aria-label="Notifications"
-                className="relative rounded-xl p-2.5 text-slate-500 transition hover:bg-slate-100"
-                type="button"
-              >
-                <Bell size={19} />
-                {dueCount > 0 && (
-                  <span className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-white bg-rose-500" />
-                )}
-              </button>
-              <div className="hidden h-8 w-px bg-slate-200 sm:block" />
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
-                  A
-                </div>
-                <div className="hidden sm:block">
-                  <p className="text-xs font-bold text-slate-800">Alex Morgan</p>
-                  <p className="text-[11px] text-slate-400">Personal workspace</p>
-                </div>
-                <ChevronDown className="hidden text-slate-400 sm:block" size={15} />
-              </div>
+              <span className="hidden text-xs text-slate-400 sm:block">
+                Demo data
+              </span>
               <Link
-                aria-label="Sign out"
-                className="ml-1 rounded-xl p-2.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                title="Sign out"
+                className="text-xs font-medium text-slate-500 transition hover:text-slate-800"
                 to="/login"
               >
-                <LogOut size={17} />
+                Sign out
               </Link>
             </div>
           </div>
         </header>
 
-        <div className="mx-auto max-w-[1500px] px-4 py-7 sm:px-7 sm:py-9 lg:px-10">
-          <div className="mb-6 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+        <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-7 lg:px-9">
+          <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 pb-2 lg:hidden">
             {navigation.map(({ id, label, icon: Icon }) => (
               <button
-                className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
+                className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-2 text-xs font-medium ${
                   activeSection === id
-                    ? "bg-blue-600 text-white"
-                    : "border border-slate-200 bg-white text-slate-600"
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-slate-500"
                 }`}
                 key={id}
                 onClick={() => setActiveSection(id)}
@@ -466,22 +405,18 @@ export default function Dashboard() {
             ))}
           </div>
 
-          <section className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+          <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div>
-              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-blue-700">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                {formattedToday}
-              </div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-[34px]">
-                Good morning, Alex
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                {pageTitle}
               </h1>
-              <p className="mt-2 text-sm text-slate-500 sm:text-base">
-                Here&apos;s what&apos;s happening with your relationships.
+              <p className="mt-1 text-sm text-slate-500">
+                Manage your contacts and keep track of follow-ups.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex shrink-0 gap-2">
               <button
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                 onClick={() => downloadContacts(filteredContacts)}
                 type="button"
               >
@@ -489,7 +424,7 @@ export default function Dashboard() {
                 Export
               </button>
               <button
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700"
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
                 onClick={() => setShowAddContact(true)}
                 type="button"
               >
@@ -501,88 +436,42 @@ export default function Dashboard() {
 
           <section
             aria-label="Contact summary"
-            className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4"
+            className="mt-6 grid grid-cols-2 divide-x divide-slate-200 rounded-xl border border-slate-200 bg-white sm:grid-cols-4"
           >
             {[
-              {
-                label: "Total contacts",
-                value: contacts.length,
-                detail: "In your network",
-                icon: Users,
-                tone: "blue",
-              },
-              {
-                label: "Added this month",
-                value: addedThisMonth,
-                detail: "New connections",
-                icon: ArrowUpRight,
-                tone: "violet",
-              },
-              {
-                label: "Follow-ups due",
-                value: dueCount,
-                detail: dueCount ? "Keep the conversation going" : "You're all caught up",
-                icon: CalendarDays,
-                tone: "amber",
-              },
+              { label: "Total contacts", value: contacts.length },
+              { label: "Added this month", value: addedThisMonth },
+              { label: "Follow-ups due", value: dueCount },
               {
                 label: "Favourites",
                 value: contacts.filter((contact) => contact.favorite).length,
-                detail: "People to keep close",
-                icon: Heart,
-                tone: "rose",
               },
-            ].map(({ label, value, detail, icon: Icon, tone }) => (
+            ].map(({ label, value }) => (
               <article
-                className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.025)] sm:p-5"
+                className="px-4 py-3.5 sm:px-5"
                 key={label}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-500 sm:text-sm">
-                    {label}
-                  </span>
-                  <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                      tone === "blue"
-                        ? "bg-blue-50 text-blue-600"
-                        : tone === "violet"
-                          ? "bg-violet-50 text-violet-600"
-                          : tone === "amber"
-                            ? "bg-amber-50 text-amber-600"
-                            : "bg-rose-50 text-rose-600"
-                    }`}
-                  >
-                    <Icon size={17} />
-                  </span>
-                </div>
-                <p className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">
+                <p className="text-xs font-medium text-slate-500">{label}</p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
                   {value}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-400 sm:text-xs">
-                  {detail}
                 </p>
               </article>
             ))}
           </section>
 
-          <section className="mt-7 grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.85fr)]">
-            <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.025)]">
-              <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:px-6">
+          <section className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="flex flex-col justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">
-                    {activeSection === "overview"
-                      ? "Recent contacts"
-                      : pageTitle}
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    Contacts
                   </h2>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {activeSection === "overview"
-                      ? "The latest people in your network"
-                      : `${filteredContacts.length} ${
-                          filteredContacts.length === 1 ? "contact" : "contacts"
-                        }`}
+                  <p className="mt-1 text-xs text-slate-500">
+                    {filteredContacts.length}{" "}
+                    {filteredContacts.length === 1 ? "contact" : "contacts"}
                   </p>
                 </div>
-                <label className="flex min-h-10 items-center gap-2.5 rounded-xl border border-slate-200 px-3 text-slate-400 transition focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50 sm:w-64">
+                <label className="flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 px-3 text-slate-400 transition focus-within:border-blue-400 sm:w-64">
                   <Search size={16} />
                   <input
                     aria-label="Search contacts"
@@ -595,133 +484,134 @@ export default function Dashboard() {
                 </label>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[680px] text-left">
-                  <thead>
-                    <tr className="bg-slate-50/80">
-                      {["Contact", "Company", "Tags", "Last interaction", ""].map(
-                        (heading) => (
-                          <th
-                            className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400"
-                            key={heading || "actions"}
+              <div className="flex items-stretch">
+                <div className="min-w-0 flex-1">
+                  {Object.entries(contactGroups).map(([letter, group]) => (
+                    <section
+                      aria-label={`${letter} contacts`}
+                      className="scroll-mt-4"
+                      id={`contact-letter-${letter}`}
+                      key={letter}
+                    >
+                      <h3 className="sticky top-0 z-[1] border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600 sm:px-5">
+                        {letter}
+                        <span className="ml-2 font-normal text-slate-400">
+                          {group.length}
+                        </span>
+                      </h3>
+                      <ul className="divide-y divide-slate-100">
+                        {group.map((contact) => (
+                          <li
+                            className="flex min-h-[68px] items-center gap-3 px-4 py-2.5 hover:bg-slate-50 sm:px-5"
+                            key={contact.id}
                           >
-                            {heading}
-                          </th>
-                        ),
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {visibleContacts.map((contact) => (
-                      <tr
-                        className="transition hover:bg-slate-50/70"
-                        key={contact.id}
-                      >
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                                avatarColors[contact.color] ??
-                                "bg-slate-100 text-slate-600"
-                              }`}
-                            >
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-600">
                               {getInitials(contact.name)}
                             </span>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-slate-800">
                                 {contact.name}
                               </p>
-                              <p className="mt-0.5 text-xs text-slate-400">
-                                {contact.email || contact.phone || "No details yet"}
+                              <p className="mt-0.5 truncate text-xs text-slate-500">
+                                {contact.email || contact.phone || "No details"}
                               </p>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <p className="text-sm font-medium text-slate-700">
-                            {contact.company || "—"}
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-400">
-                            {contact.role || "—"}
-                          </p>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <div className="flex flex-wrap gap-1.5">
-                            {contact.tags.length ? (
-                              contact.tags.slice(0, 2).map((tag, index) => (
-                                <span
-                                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
-                                    tagColors[index % tagColors.length]
+                            <div className="hidden min-w-0 flex-1 sm:block">
+                              <p className="truncate text-sm text-slate-700">
+                                {contact.company || "—"}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-slate-500">
+                                {contact.role || contact.tags.join(", ") || "—"}
+                              </p>
+                            </div>
+                            <div className="hidden w-28 shrink-0 md:block">
+                              <p className="text-xs text-slate-600">
+                                {contact.lastContact}
+                              </p>
+                              {contact.followUp && (
+                                <p
+                                  className={`mt-1 flex items-center gap-1 text-[11px] ${
+                                    contact.followUp < today
+                                      ? "font-medium text-rose-600"
+                                      : "text-slate-500"
                                   }`}
-                                  key={tag}
                                 >
-                                  {tag}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-xs text-slate-300">—</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span className="text-xs text-slate-500">
-                            {contact.lastContact}
-                          </span>
-                          {contact.followUp && (
-                            <span className="mt-1 flex items-center gap-1 text-[10px] font-medium text-amber-600">
-                              <Clock3 size={11} />
-                              Follow up {formatFollowUp(contact.followUp)}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <button
-                            aria-label={
-                              contact.favorite
-                                ? `Remove ${contact.name} from favourites`
-                                : `Add ${contact.name} to favourites`
-                            }
-                            className={`rounded-lg p-2 transition hover:bg-rose-50 ${
-                              contact.favorite
-                                ? "text-rose-500"
-                                : "text-slate-300 hover:text-rose-400"
-                            }`}
-                            onClick={() => toggleFavorite(contact.id)}
-                            type="button"
-                          >
-                            <Heart
-                              fill={contact.favorite ? "currentColor" : "none"}
-                              size={17}
-                            />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {visibleContacts.length === 0 && (
-                      <tr>
-                        <td className="px-5 py-14 text-center" colSpan={5}>
-                          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                            <Users size={20} />
-                          </div>
-                          <p className="mt-3 text-sm font-semibold text-slate-700">
-                            No contacts found
-                          </p>
-                          <p className="mt-1 text-xs text-slate-400">
-                            Try another search or add someone new.
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                                  <Clock3 size={11} />
+                                  {contact.followUp < today
+                                    ? "Overdue"
+                                    : formatFollowUp(contact.followUp)}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              aria-label={
+                                contact.favorite
+                                  ? `Remove ${contact.name} from favourites`
+                                  : `Add ${contact.name} to favourites`
+                              }
+                              className={`rounded p-1.5 transition hover:bg-slate-100 ${
+                                contact.favorite
+                                  ? "text-rose-500"
+                                  : "text-slate-300 hover:text-slate-500"
+                              }`}
+                              onClick={() => toggleFavorite(contact.id)}
+                              type="button"
+                            >
+                              <Heart
+                                fill={contact.favorite ? "currentColor" : "none"}
+                                size={17}
+                              />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                  {filteredContacts.length === 0 && (
+                    <div className="px-5 py-12 text-center">
+                      <p className="text-sm font-medium text-slate-700">
+                        No contacts found
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Try another search or add someone new.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <nav
+                  aria-label="Jump to contact letter"
+                  className="hidden w-8 shrink-0 flex-col items-center justify-center border-l border-slate-100 py-2 lg:flex"
+                >
+                  {alphabet.map((letter) => (
+                    <button
+                      aria-label={`Jump to ${letter}`}
+                      className={`flex h-[18px] w-full items-center justify-center text-[10px] font-medium ${
+                        availableLetters.has(letter)
+                          ? "text-blue-700 hover:bg-blue-50"
+                          : "cursor-default text-slate-300"
+                      }`}
+                      disabled={!availableLetters.has(letter)}
+                      key={letter}
+                      onClick={() =>
+                        document
+                          .getElementById(`contact-letter-${letter}`)
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }
+                      type="button"
+                    >
+                      {letter}
+                    </button>
+                  ))}
+                </nav>
               </div>
-              <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3.5">
-                <span className="text-xs text-slate-400">
-                  Showing {visibleContacts.length} of {filteredContacts.length}{" "}
-                  contacts
+              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 sm:px-5">
+                <span className="text-xs text-slate-500">
+                  {filteredContacts.length}{" "}
+                  {filteredContacts.length === 1 ? "contact" : "contacts"}
                 </span>
                 <button
-                  className="text-xs font-semibold text-blue-600 transition hover:text-blue-700"
+                  className="text-xs font-medium text-blue-700 hover:text-blue-800"
                   onClick={() => setActiveSection("contacts")}
                   type="button"
                 >
@@ -730,98 +620,89 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <aside className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)] sm:p-6">
-              <div className="flex items-start justify-between gap-3">
+            <aside className="rounded-xl border border-slate-200 bg-white">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4">
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">
-                    Upcoming follow-ups
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    Follow-ups
                   </h2>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Stay in touch, one step at a time
+                  <p className="mt-1 text-xs text-slate-500">
+                    Due or coming up
                   </p>
                 </div>
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                  <CalendarDays size={17} />
-                </span>
+                <CalendarDays className="text-slate-400" size={17} />
               </div>
 
-              <div className="mt-5 space-y-2">
+              <div className="divide-y divide-slate-100 px-4">
                 {contacts
                   .filter(
                     (contact) =>
                       contact.followUp &&
-                      contact.followUp >= today &&
                       contact.followUp <= weekAhead,
                   )
                   .sort((a, b) => a.followUp.localeCompare(b.followUp))
                   .slice(0, 4)
                   .map((contact) => (
                     <article
-                      className="flex items-center gap-3 rounded-xl border border-slate-100 p-3 transition hover:border-blue-100 hover:bg-blue-50/30"
+                      className="flex items-center gap-3 py-3"
                       key={contact.id}
                     >
                       <span
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                          avatarColors[contact.color] ??
-                          "bg-slate-100 text-slate-600"
-                        }`}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-medium text-slate-600"
                       >
                         {getInitials(contact.name)}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-slate-800">
+                        <p className="truncate text-xs font-medium text-slate-800">
                           {contact.name}
                         </p>
-                        <p className="mt-0.5 truncate text-[10px] text-slate-400">
+                        <p className="mt-0.5 truncate text-[11px] text-slate-500">
                           {contact.company || "Personal connection"}
                         </p>
                       </div>
-                      <span className="shrink-0 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
-                        {formatFollowUp(contact.followUp)}
+                      <span
+                        className={`shrink-0 text-[11px] ${
+                          contact.followUp < today
+                            ? "font-medium text-rose-600"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {contact.followUp < today
+                          ? "Overdue"
+                          : formatFollowUp(contact.followUp)}
                       </span>
                     </article>
                   ))}
                 {contacts.filter(
                   (contact) =>
                     contact.followUp &&
-                    contact.followUp >= today &&
                     contact.followUp <= weekAhead,
                 ).length === 0 && (
-                  <div className="rounded-xl bg-slate-50 px-4 py-8 text-center">
-                    <Check className="mx-auto text-emerald-500" size={22} />
-                    <p className="mt-2 text-sm font-semibold text-slate-700">
-                      You&apos;re all caught up
+                  <div className="px-2 py-8 text-center">
+                    <Check className="mx-auto text-slate-400" size={20} />
+                    <p className="mt-2 text-sm font-medium text-slate-700">
+                      No follow-ups scheduled
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      Add a follow-up when you want to reconnect.
+                    <p className="mt-1 text-xs text-slate-500">
+                      Add a date to a contact to see it here.
                     </p>
                   </div>
                 )}
               </div>
 
               <button
-                className="mt-4 flex w-full items-center justify-between rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                className="flex w-full items-center justify-between border-t border-slate-200 px-4 py-3 text-xs font-medium text-blue-700 hover:bg-slate-50"
                 onClick={() => setActiveSection("followups")}
                 type="button"
               >
-                See all follow-ups
-                <ArrowUpRight size={14} />
+                View follow-ups
+                <span aria-hidden="true">→</span>
               </button>
-              <div className="mt-5 flex items-start gap-3 rounded-xl bg-blue-50/80 p-3.5">
-                <BriefcaseBusiness
-                  className="mt-0.5 shrink-0 text-blue-600"
-                  size={16}
-                />
-                <p className="text-[11px] leading-5 text-slate-600">
-                  A thoughtful follow-up can turn a good conversation into a
-                  lasting relationship.
-                </p>
-              </div>
             </aside>
           </section>
 
-          <p className="mt-7 text-center text-[11px] text-slate-400">
-            Demo workspace · Your changes stay in this page session
+          <p className="mt-5 text-xs text-slate-400">
+            Demo data is temporary and resets when you refresh.
           </p>
         </div>
       </main>
