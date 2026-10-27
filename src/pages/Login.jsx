@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,19 +13,18 @@ import {
 
 export default function Login() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const message = location.state?.message;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
-    setSuccess("");
 
     const trimmedEmail = email.trim();
 
@@ -39,9 +38,7 @@ export default function Login() {
       return;
     }
 
-    setSuccess(
-      "Form validation successful! Backend authentication is not connected yet."
-    );
+    navigate("/dashboard");
   };
 
   return (
@@ -156,7 +153,6 @@ export default function Login() {
                     onChange={(e) => {
                       setEmail(e.target.value);
                       setError("");
-                      setSuccess("");
                     }}
                     required
                     className="register-input"
@@ -189,7 +185,6 @@ export default function Login() {
                     onChange={(e) => {
                       setPassword(e.target.value);
                       setError("");
-                      setSuccess("");
                     }}
                     minLength={8}
                     required
@@ -220,15 +215,6 @@ export default function Login() {
                   className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600"
                 >
                   {error}
-                </div>
-              )}
-
-              {success && (
-                <div
-                  role="status"
-                  className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-                >
-                  {success}
                 </div>
               )}
 
