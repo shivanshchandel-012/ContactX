@@ -348,7 +348,7 @@ function DashboardPreview() {
               <div>
                 <p className="text-xs text-slate-400">YOUR WORKSPACE</p>
                 <h3 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-                  Good morning, Alex
+                  {`Good morning, ${currentUser?.name || "Alex"}`}
                 </h3>
                 <p className="mt-1 text-xs text-slate-500 sm:text-sm">
                   Here&apos;s what&apos;s happening with your contacts.
