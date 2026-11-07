@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Server configuration
-const PORT = 5000;
+const PORT = 5001;
 const JWT_SECRET = "contactx_simple_secret_key_2026";
 const DATA_DIR = path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
