@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
+  Bell,
   CalendarDays,
+  ChevronDown,
   Check,
   Clock3,
   Heart,
   LayoutDashboard,
+  LogOut,
   Plus,
   Search,
   Users,
@@ -14,22 +17,6 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import demoContacts from "../data/demo-contacts.json";
 import { authService } from "../services/authService";
-
-const navigate = useNavigate();
-
-const [currentUser, setCurrentUser] = useState(null);
-
-useEffect(() => {
-  authService.getMe().then(user => {
-    if (user) setCurrentUser(user);
-  });
-}, []);
-
-const handleLogout = () => {
-  authService.logout();
-  setCurrentUser(null);
-  navigate("/login");
-};
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -67,6 +54,19 @@ function getGreeting() {
   return "Good evening";
 }
 
+function getContactGroups(contacts) {
+  return contacts.reduce((groups, contact) => {
+    const letter = (contact.name?.trim()?.[0] || "#").toUpperCase();
+
+    if (!groups[letter]) {
+      groups[letter] = [];
+    }
+
+    groups[letter].push(contact);
+    return groups;
+  }, {});
+}
+
 
 function formatFollowUp(date) {
   if (!date) return "";
@@ -90,7 +90,7 @@ function downloadContacts(contacts) {
       columns
         .map((column) =>
           escapeCell(
-            column === "tags" ? contact.tags.join(", ") : contact[column],
+            column === "tags" ? (contact.tags ?? []).join(", ") : contact[column],
           ),
         )
         .join(","),
@@ -273,9 +273,14 @@ export default function Dashboard() {
 
 
   useEffect(() => {
-    authService.getMe().then((user) => {
-      if (user) setCurrentUser(user);
-    });
+    authService
+      .getMe()
+      .then((user) => {
+        if (user) setCurrentUser(user);
+      })
+      .catch((error) => {
+        console.error("Failed to load current user:", error);
+      });
   }, []);
 
   const handleLogout = () => {
@@ -286,6 +291,11 @@ export default function Dashboard() {
 
   const currentMonth = getLocalDateString().slice(0, 7);
   const today = getLocalDateString();
+  const formattedToday = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
   const weekAhead = getWeekAhead();
   const dueCount = contacts.filter(
     (contact) => contact.followUp && contact.followUp <= today,
@@ -305,7 +315,7 @@ export default function Dashboard() {
           contact.phone,
           contact.company,
           contact.role,
-          ...contact.tags,
+          ...(contact.tags ?? []),
         ]
           .join(" ")
           .toLowerCase()
@@ -595,7 +605,7 @@ export default function Dashboard() {
                                 {contact.company || "—"}
                               </p>
                               <p className="mt-0.5 truncate text-xs text-slate-500">
-                                {contact.role || contact.tags.join(", ") || "—"}
+                                {contact.role || (contact.tags ?? []).join(", ") || "—"}
                               </p>
                             </div>
                             <div className="hidden w-28 shrink-0 md:block">
