@@ -6,5 +6,12 @@
     "password": "$2b$10$CcHXFl8NinlYTU8CJuBmp.RALIi5c2leifoWoLCh.IDfe05ufRHq6",
     "avatarColor": "blue",
     "createdAt": "2026-10-27T04:53:36.633Z"
+  },
+  {
+    "id": "1794047692577",
+    "name": "Shivansh Chandel",
+    "email": "ridgerghost@gmail.com",
+    "password": "$2b$10$1u1uGIbTAc0g0pqzDQ9AJ.FBVMs3R/QpJSW0erD6fSfOjoNxUVzoC",
+    "createdAt": "2026-11-07T10:34:52.577Z"
   }
 ]
