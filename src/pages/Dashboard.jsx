@@ -10,19 +10,22 @@ import {
   LayoutDashboard,
   LogOut,
   Plus,
+  RotateCcw,
   Search,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import demoContacts from "../data/demo-contacts.json";
 import { authService } from "../services/authService";
+import { contactService } from "../services/contactService";
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "contacts", label: "All contacts", icon: Users },
   { id: "favorites", label: "Favourites", icon: Heart },
   { id: "followups", label: "Follow-ups", icon: CalendarDays },
+  { id: "trash", label: "Trash", icon: Trash2 },
 ];
 
 function getLocalDateString(date = new Date()) {
@@ -118,7 +121,7 @@ function ContactModal({ onClose, onSave }) {
   });
   const [error, setError] = useState("");
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
     if (!form.name.trim()) {
       setError("Enter a name to add this contact.");
@@ -128,18 +131,22 @@ function ContactModal({ onClose, onSave }) {
       setError("Enter a valid email address.");
       return;
     }
-    onSave({
-      ...form,
-      name: form.name.trim(),
-      email: form.email.trim(),
-      tags: form.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-      favorite: false,
-      lastContact: "Just added",
-      color: "blue",
-    });
+    try {
+      await onSave({
+        ...form,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        tags: form.tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        favorite: false,
+        lastContact: "Just added",
+        color: "blue",
+      });
+    } catch (saveError) {
+      setError(saveError.message || "Failed to save contact.");
+    }
   }
 
   return (
@@ -250,27 +257,33 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState(
     () => authService.getUser() || { name: "User", email: "" }
   );
-  const [contacts, setContacts] = useState(() => {
-    try {
-      const saved = localStorage.getItem("contactx_contacts");
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // fallback to demoContacts
-    }
-    return demoContacts;
-  });
+  const [contacts, setContacts] = useState([]);
+  const [deletedContacts, setDeletedContacts] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(true);
+  const [contactsError, setContactsError] = useState("");
   const [activeSection, setActiveSection] = useState("overview");
   const [search, setSearch] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("contactx_contacts", JSON.stringify(contacts));
-    } catch (e) {
-      console.error("Failed to save contacts:", e);
-    }
-  }, [contacts]);
+    let cancelled = false;
+    Promise.all([contactService.list(), contactService.listTrash()])
+      .then(([activeContacts, trashedContacts]) => {
+        if (cancelled) return;
+        setContacts(activeContacts);
+        setDeletedContacts(trashedContacts);
+      })
+      .catch((error) => {
+        if (!cancelled) setContactsError(error.message || "Failed to load contacts.");
+      })
+      .finally(() => {
+        if (!cancelled) setContactsLoading(false);
+      });
 
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     authService
@@ -306,7 +319,8 @@ export default function Dashboard() {
 
   const filteredContacts = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return contacts.filter((contact) => {
+    const sectionContacts = activeSection === "trash" ? deletedContacts : contacts;
+    return sectionContacts.filter((contact) => {
       const matchesSearch =
         !query ||
         [
@@ -327,32 +341,55 @@ export default function Dashboard() {
       }
       return true;
     });
-  }, [activeSection, contacts, search, weekAhead]);
+  }, [activeSection, contacts, deletedContacts, search, weekAhead]);
 
   const contactGroups = getContactGroups(filteredContacts);
   const availableLetters = new Set(Object.keys(contactGroups));
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-  function addContact(contact) {
-    setContacts((current) => [
-      {
-        ...contact,
-        id: Math.max(0, ...current.map((item) => item.id)) + 1,
-        createdAt: new Date().toISOString(),
-      },
-      ...current,
-    ]);
+  async function addContact(contact) {
+    const createdContact = await contactService.create(contact);
+    setContacts((current) => [createdContact, ...current]);
+    setContactsError("");
     setShowAddContact(false);
   }
 
-  function toggleFavorite(id) {
-    setContacts((current) =>
-      current.map((contact) =>
-        contact.id === id
-          ? { ...contact, favorite: !contact.favorite }
-          : contact,
-      ),
-    );
+  async function toggleFavorite(id) {
+    const contact = contacts.find((item) => item.id === id);
+    if (!contact) return;
+    try {
+      const updatedContact = await contactService.update(id, {
+        favorite: !contact.favorite,
+      });
+      setContacts((current) =>
+        current.map((item) => (item.id === id ? updatedContact : item)),
+      );
+      setContactsError("");
+    } catch (error) {
+      setContactsError(error.message || "Failed to update contact.");
+    }
+  }
+
+  async function deleteContact(id) {
+    try {
+      const deletedContact = await contactService.remove(id);
+      setContacts((current) => current.filter((item) => item.id !== id));
+      setDeletedContacts((current) => [deletedContact, ...current]);
+      setContactsError("");
+    } catch (error) {
+      setContactsError(error.message || "Failed to move contact to trash.");
+    }
+  }
+
+  async function restoreContact(id) {
+    try {
+      const restoredContact = await contactService.restore(id);
+      setDeletedContacts((current) => current.filter((item) => item.id !== id));
+      setContacts((current) => [restoredContact, ...current]);
+      setContactsError("");
+    } catch (error) {
+      setContactsError(error.message || "Failed to restore contact.");
+    }
   }
 
   const pageTitle =
@@ -403,9 +440,9 @@ export default function Dashboard() {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-slate-800">
-                Demo account
+                {currentUser?.name || "Your account"}
               </p>
-              <p className="mt-0.5 text-xs text-slate-400">Local workspace</p>
+              <p className="mt-0.5 text-xs text-slate-400">Personal workspace</p>
             </div>
           </div>
         </div>
@@ -507,16 +544,24 @@ export default function Dashboard() {
                 <ArrowDownToLine size={16} />
                 Export
               </button>
-              <button
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
-                onClick={() => setShowAddContact(true)}
-                type="button"
-              >
-                <Plus size={17} />
-                Add contact
-              </button>
+              {activeSection !== "trash" && (
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                  onClick={() => setShowAddContact(true)}
+                  type="button"
+                >
+                  <Plus size={17} />
+                  Add contact
+                </button>
+              )}
             </div>
           </section>
+
+          {contactsError && (
+            <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
+              {contactsError}
+            </p>
+          )}
 
           <section
             aria-label="Contact summary"
@@ -548,7 +593,7 @@ export default function Dashboard() {
               <div className="flex flex-col justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-900">
-                    Contacts
+                    {activeSection === "trash" ? "Deleted contacts" : "Contacts"}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
                     {filteredContacts.length}{" "}
@@ -627,40 +672,75 @@ export default function Dashboard() {
                                 </p>
                               )}
                             </div>
-                            <button
-                              aria-label={
-                                contact.favorite
-                                  ? `Remove ${contact.name} from favourites`
-                                  : `Add ${contact.name} to favourites`
-                              }
-                              className={`rounded p-1.5 transition hover:bg-slate-100 ${
-                                contact.favorite
-                                  ? "text-rose-500"
-                                  : "text-slate-300 hover:text-slate-500"
-                              }`}
-                              onClick={() => toggleFavorite(contact.id)}
-                              type="button"
-                            >
-                              <Heart
-                                fill={contact.favorite ? "currentColor" : "none"}
-                                size={17}
-                              />
-                            </button>
+                            {activeSection === "trash" ? (
+                              <button
+                                aria-label={`Restore ${contact.name}`}
+                                className="rounded p-1.5 text-blue-600 transition hover:bg-blue-50"
+                                onClick={() => restoreContact(contact.id)}
+                                title="Restore contact"
+                                type="button"
+                              >
+                                <RotateCcw size={17} />
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  aria-label={
+                                    contact.favorite
+                                      ? `Remove ${contact.name} from favourites`
+                                      : `Add ${contact.name} to favourites`
+                                  }
+                                  className={`rounded p-1.5 transition hover:bg-slate-100 ${
+                                    contact.favorite
+                                      ? "text-rose-500"
+                                      : "text-slate-300 hover:text-slate-500"
+                                  }`}
+                                  onClick={() => toggleFavorite(contact.id)}
+                                  type="button"
+                                >
+                                  <Heart
+                                    fill={contact.favorite ? "currentColor" : "none"}
+                                    size={17}
+                                  />
+                                </button>
+                                <button
+                                  aria-label={`Move ${contact.name} to trash`}
+                                  className="rounded p-1.5 text-slate-300 transition hover:bg-rose-50 hover:text-rose-600"
+                                  onClick={() => deleteContact(contact.id)}
+                                  title="Move to trash"
+                                  type="button"
+                                >
+                                  <Trash2 size={17} />
+                                </button>
+                              </>
+                            )}
                           </li>
                         ))}
                       </ul>
                     </section>
                   ))}
-                  {filteredContacts.length === 0 && (
+                  {contactsLoading ? (
+                    <div className="px-5 py-12 text-center text-sm text-slate-500">
+                      Loading contacts...
+                    </div>
+                  ) : filteredContacts.length === 0 ? (
                     <div className="px-5 py-12 text-center">
                       <p className="text-sm font-medium text-slate-700">
-                        No contacts found
+                        {contactsError && contacts.length === 0 && deletedContacts.length === 0
+                          ? "Contacts could not be loaded"
+                          : activeSection === "trash"
+                            ? "Trash is empty"
+                            : "No contacts found"}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        Try another search or add someone new.
+                        {contactsError && contacts.length === 0 && deletedContacts.length === 0
+                          ? "Check the API and MongoDB connection, then reload."
+                          : activeSection === "trash"
+                            ? "Deleted contacts will appear here."
+                            : "Try another search or add someone new."}
                       </p>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <nav
@@ -690,17 +770,20 @@ export default function Dashboard() {
                 </nav>
               </div>
               <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 sm:px-5">
-                <span className="text-xs text-slate-500">
-                  {filteredContacts.length}{" "}
-                  {filteredContacts.length === 1 ? "contact" : "contacts"}
-                </span>
-                <button
-                  className="text-xs font-medium text-blue-700 hover:text-blue-800"
-                  onClick={() => setActiveSection("contacts")}
-                  type="button"
-                >
-                  View all contacts <span aria-hidden="true">→</span>
-                </button>
+                    <span className="text-xs text-slate-500">
+                      {filteredContacts.length} {filteredContacts.length === 1 ? "contact" : "contacts"}
+                    </span>
+                    {activeSection === "trash" ? (
+                      <span className="text-xs text-slate-400">Deleted contacts can be restored</span>
+                    ) : (
+                      <button
+                        className="text-xs font-medium text-blue-700 hover:text-blue-800"
+                        onClick={() => setActiveSection("contacts")}
+                        type="button"
+                      >
+                        View all contacts <span aria-hidden="true">→</span>
+                      </button>
+                    )}
               </div>
             </div>
 
