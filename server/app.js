@@ -8,6 +8,32 @@ export const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20kb" }));
 
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+  const configuredOrigins = (process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const allowedOrigins = new Set([
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "https://shivanshchandel-012.github.io",
+    ...configuredOrigins,
+  ]);
+
+  if (!origin || allowedOrigins.has(origin)) {
+    if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(origin && !allowedOrigins.has(origin) ? 403 : 204);
+  }
+  return next();
+});
+
 app.get("/api/health", (_req, res) => {
   const connected = mongoose.connection.readyState === 1;
   res.status(connected ? 200 : 503).json({
