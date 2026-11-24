@@ -38,6 +38,8 @@ const contactSchema = new mongoose.Schema(
     favorite: { type: Boolean, default: false },
     lastContact: { type: String, trim: true, maxlength: 80, default: "" },
     color: { type: String, trim: true, maxlength: 30, default: "blue" },
+    photoUrl: { type: String, trim: true, maxlength: 500, default: "" },
+    photoPublicId: { type: String, trim: true, maxlength: 300, default: "" },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },
@@ -58,6 +60,7 @@ contactSchema.set("toJSON", {
     delete value._id;
     delete value.__v;
     delete value.owner;
+    delete value.photoPublicId;
     if (value.followUp) value.followUp = value.followUp.toISOString().slice(0, 10);
     return value;
   },

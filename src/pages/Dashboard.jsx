@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Search,
   Trash2,
+  Upload,
   Users,
   X,
 } from "lucide-react";
@@ -84,27 +85,36 @@ function formatFollowUp(date) {
   });
 }
 
-function downloadContacts(contacts) {
-  const columns = ["name", "email", "phone", "company", "role", "tags"];
-  const escapeCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
-  const rows = [
-    columns.join(","),
-    ...contacts.map((contact) =>
-      columns
-        .map((column) =>
-          escapeCell(
-            column === "tags" ? (contact.tags ?? []).join(", ") : contact[column],
-          ),
-        )
-        .join(","),
-    ),
-  ];
-  const url = URL.createObjectURL(
-    new Blob([rows.join("\r\n")], { type: "text/csv;charset=utf-8" }),
-  );
+// function downloadContacts(contacts) {
+//   const columns = ["name", "email", "phone", "company", "role", "tags"];
+//   const escapeCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+//   const rows = [
+//     columns.join(","),
+//     ...contacts.map((contact) =>
+//       columns
+//         .map((column) =>
+//           escapeCell(
+//             column === "tags" ? (contact.tags ?? []).join(", ") : contact[column],
+//           ),
+//         )
+//         .join(","),
+//     ),
+//   ];
+//   const url = URL.createObjectURL(
+//     new Blob([rows.join("\r\n")], { type: "text/csv;charset=utf-8" }),
+//   );
+//   const link = document.createElement("a");
+//   link.href = url;
+//   link.download = "contactx-contacts.csv";
+//   link.click();
+//   URL.revokeObjectURL(url);
+// }
+
+function saveFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "contactx-contacts.csv";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -264,6 +274,9 @@ export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("overview");
   const [search, setSearch] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [uploadingPhotoId, setUploadingPhotoId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -346,6 +359,51 @@ export default function Dashboard() {
   const contactGroups = getContactGroups(filteredContacts);
   const availableLetters = new Set(Object.keys(contactGroups));
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+  async function handleExport() {
+    setContactsError("");
+    try {
+      const view = ["favorites", "followups", "trash"].includes(activeSection) ? activeSection : "all";
+      const { blob, filename } = await contactService.exportCsv({ view, search: search.trim() });
+      saveFile(blob, filename);
+    } catch (error) {
+      setContactsError(error.message);
+    }
+  }
+
+  async function handleImport(event) {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow choosing the same file again
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    setContactsError("");
+    try {
+      const result = await contactService.importCsv(file);
+      setImportResult(result);
+      if (result.imported > 0) setContacts(await contactService.list());
+    } catch (error) {
+      setContactsError(error.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handlePhotoChange(id, event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadingPhotoId(id);
+    setContactsError("");
+    try {
+      const updatedContact = await contactService.uploadPhoto(id, file);
+      setContacts((current) => current.map((item) => (item.id === id ? updatedContact : item)));
+    } catch (error) {
+      setContactsError(error.message);
+    } finally {
+      setUploadingPhotoId(null);
+    }
+  }
 
   async function addContact(contact) {
     const createdContact = await contactService.create(contact);
@@ -538,12 +596,23 @@ export default function Dashboard() {
             <div className="flex shrink-0 gap-2">
               <button
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                onClick={() => downloadContacts(filteredContacts)}
+                onClick={handleExport}
                 type="button"
               >
                 <ArrowDownToLine size={16} />
                 Export
               </button>
+              {activeSection !== "trash" && (
+                <label
+                  className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 ${
+                    importing ? "pointer-events-none opacity-60" : ""
+                  }`}
+                >
+                  <Upload size={16} />
+                  {importing ? "Importing..." : "Import CSV"}
+                  <input accept=".csv,text/csv" className="sr-only" onChange={handleImport} type="file" />
+                </label>
+              )}
               {activeSection !== "trash" && (
                 <button
                   className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
@@ -561,6 +630,34 @@ export default function Dashboard() {
             <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
               {contactsError}
             </p>
+          )}
+          {importResult && (
+            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900" role="status">
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-medium">
+                  Imported {importResult.imported} of {importResult.total} rows
+                  {importResult.failed > 0 && `, ${importResult.failed} skipped`}.
+                </p>
+                <button
+                  aria-label="Dismiss import result"
+                  className="rounded p-0.5 text-blue-700 hover:bg-blue-100"
+                  onClick={() => setImportResult(null)}
+                  type="button"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              {importResult.errors.length > 0 && (
+                <ul className="mt-2 max-h-40 list-disc overflow-y-auto pl-5 text-xs text-blue-800">
+                  {importResult.errors.map((error) => (
+                    <li key={error.line}>
+                      Line {error.line}
+                      {error.name ? ` (${error.name})` : ""}: {error.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
 
           <section
@@ -634,9 +731,32 @@ export default function Dashboard() {
                             className="flex min-h-[68px] items-center gap-3 px-4 py-2.5 hover:bg-slate-50 sm:px-5"
                             key={contact.id}
                           >
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-600">
-                              {getInitials(contact.name)}
-                            </span>
+                            <label
+                              className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-xs font-medium text-slate-600 ${
+                                activeSection === "trash" ? "" : "cursor-pointer hover:ring-2 hover:ring-blue-200"
+                              }`}
+                              title={activeSection === "trash" ? undefined : "Upload photo"}
+                            >
+                              {contact.photoUrl ? (
+                                <img alt="" className="h-full w-full object-cover" src={contact.photoUrl} />
+                              ) : (
+                                getInitials(contact.name)
+                              )}
+                              {uploadingPhotoId === contact.id && (
+                                <span className="absolute inset-0 flex items-center justify-center bg-white/70 text-[10px]">
+                                  ...
+                                </span>
+                              )}
+                              {activeSection !== "trash" && (
+                                <input
+                                  accept="image/jpeg,image/png,image/webp"
+                                  aria-label={`Upload photo for ${contact.name}`}
+                                  className="sr-only"
+                                  onChange={(event) => handlePhotoChange(contact.id, event)}
+                                  type="file"
+                                />
+                              )}
+                            </label>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium text-slate-800">
                                 {contact.name}

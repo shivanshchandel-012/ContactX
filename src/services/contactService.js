@@ -27,7 +27,61 @@ async function request(path, options = {}) {
   return data;
 }
 
+// Used for file uploads: the browser sets the multipart Content-Type itself,
+// so we must NOT send "Content-Type: application/json" here.
+async function uploadFile(path, field, file) {
+  const form = new FormData();
+  form.append(field, file);
+  const headers = {};
+  const token = authService.getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: "POST", headers, body: form });
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("The server returned an invalid response.");
+  }
+  if (!response.ok) throw new Error(data.message || "The upload failed.");
+  return data;
+}
+
 export const contactService = {
+    // Returns { total, imported, failed, errors: [{ line, name, message }] }
+    async importCsv(file) {
+      return uploadFile("/contacts/import", "file", file);
+    },
+  
+    // filters: { view: "all" | "favorites" | "followups" | "trash", search, tag }
+    async exportCsv(filters = {}) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters)) {
+        if (value) params.set(key, value);
+      }
+      const headers = {};
+      const token = authService.getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+  
+      const response = await fetch(`${API_BASE_URL}/contacts/export?${params}`, { headers });
+      if (!response.ok) {
+        let message = "The export failed.";
+        try {
+          message = (await response.json()).message || message;
+        } catch {
+          // keep the default message
+        }
+        throw new Error(message);
+      }
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] || "contactx-contacts.csv";
+      return { blob: await response.blob(), filename };
+    },
+  
+    async uploadPhoto(id, file) {
+      const data = await uploadFile(`/contacts/${encodeURIComponent(id)}/photo`, "photo", file);
+      return data.contact;
+    },
   async list() {
     const data = await request("/contacts");
     return data.contacts;
