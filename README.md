@@ -1,84 +1,62 @@
-# ContactX - Full-Stack Contact Manager & CRM
+# ContactX
 
-ContactX is a modern CRM and contact management web application featuring a React frontend, Node.js + Express backend, and atomic JSON file database.
+ContactX is a contact manager with a React/Vite frontend and an Express API backed by MongoDB through Mongoose. User accounts use bcrypt password hashes and JWT authentication; contacts are scoped to their owner and support soft deletion and restore.
 
----
+## Requirements
 
-## 👥 Team & Branches
+- Node.js 20.19+ (or 22.12+)
+- A MongoDB Atlas connection string (or another MongoDB deployment)
 
-- **Shivansh Chandel** (`shivanshchandel-012`): Landing Page & Base Registration (`main`)
-- **Samarth Sharma** (`samarthsharma1411`): Login UI & Form Validation (`feature/login-u1`)
-- **Sambhav Sehgal** (`sambhav.sehgal.007`): JSON-Backed CRM Dashboard (`Dashboard-Integration`)
-- **Siddhant** (Current Branch: `feature/auth-backend`):
-  - Merged all team branches (`main`, `feature/login-u1`, `Dashboard-Integration`)
-  - Node.js + Express backend with JSON file storage database
-  - Complete Login / Signup backend API with validation & JWT authentication
-  - Frontend integration for Register, Login, and Dashboard session management
+## Local setup
 
----
-
-## 🚀 Getting Started
-
-### 1. Install Dependencies
-
-Install root (frontend) and server dependencies:
-
-```bash
-# Frontend dependencies
+```powershell
 npm install
-
-# Backend dependencies
-cd server
-npm install
-cd ..
+npm --prefix server install
+Copy-Item server\.env.example server\.env
 ```
 
-### 2. Run the Application
+Edit `server\.env` and set:
 
-You can run both frontend and backend concurrently with a single command:
+- `MONGODB_URI`: your MongoDB connection string
+- `JWT_SECRET`: a private random value of at least 32 characters
+- `PORT`: optional; defaults to `5001`
+- `JWT_EXPIRES_IN`: optional; defaults to `7d`
 
-```bash
+Keep `server\.env` private and do not commit it. The API intentionally refuses to start without a MongoDB URI and a sufficiently long JWT secret.
+
+Start the frontend and backend together:
+
+```powershell
 npm run dev:all
 ```
 
-Or run them individually in separate terminals:
+The frontend is served by Vite (default port `5174`) and proxies `/api` requests to the API on port `5001`. You can also run `npm run dev` and `npm run server:dev` in separate terminals.
 
-```bash
-# Terminal 1 - Frontend (http://localhost:5173)
-npm run dev
+## API
 
-# Terminal 2 - Backend (http://localhost:5000)
-npm run server:dev
+All paths below are prefixed by `/api`. Protected routes require `Authorization: Bearer <JWT>`.
+
+| Method | Path | Purpose | Auth |
+|---|---|---|---|
+| `GET` | `/health` | Reports API and MongoDB readiness | No |
+| `POST` | `/auth/register` | Validate and register a user, returning a JWT | No |
+| `POST` | `/auth/login` | Verify credentials and return a JWT | No |
+| `GET` | `/auth/me` | Return the authenticated user's profile | Yes |
+| `GET` | `/contacts` | List the user's active contacts | Yes |
+| `GET` | `/contacts/trash` | List the user's soft-deleted contacts | Yes |
+| `POST` | `/contacts` | Create a contact | Yes |
+| `GET` | `/contacts/:id` | Get one active contact | Yes |
+| `PATCH` | `/contacts/:id` | Update a contact | Yes |
+| `DELETE` | `/contacts/:id` | Soft-delete a contact | Yes |
+| `PATCH` | `/contacts/:id/restore` | Restore a deleted contact | Yes |
+
+User emails are normalized and unique. Active contact emails are unique per user; a deleted contact's email can be reused, but restoring it returns `409` if another active contact now uses that email. Contact queries are always scoped to the authenticated user.
+
+## Validation
+
+```powershell
+npm run build
+npm test --prefix server
 ```
 
----
-
-## 🔐 Default Demo Account
-
-A seeded demo account is pre-configured in `server/src/db/data/users.json`:
-
-- **Email**: `alex@contactx.com`
-- **Password**: `Password123!`
-
-You can also create a new account directly from `/register` and log in immediately.
-
----
-
-## 📡 Backend API Endpoints
-
-Base URL: `http://localhost:5000/api` (or `/api` via Vite proxy on port 5173)
-
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/health` | Health check & database status | No |
-| `POST` | `/auth/register` | Register new user with hashed password & JWT | No |
-| `POST` | `/auth/login` | Verify credentials & issue JWT | No |
-| `GET` | `/auth/me` | Fetch authenticated user profile | Yes (Bearer Token) |
-
----
-
-## 🗄️ JSON Database
-
-- Data directory: `server/src/db/data/`
-- User records: `server/src/db/data/users.json`
-- Includes atomic write protection (`.tmp` write + rename) to guarantee file integrity.
+Existing JSON files are legacy data and are not used by the MongoDB API. No automatic import is performed.
