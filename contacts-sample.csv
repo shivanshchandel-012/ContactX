@@ -1,0 +1,6 @@
+name,email,phone,company,role,tags,followUp
+Riya Mehta,riya@example.com,+91 90000 00001,Example Tech,Product Manager,client;priority,2026-12-01
+Arjun Verma,arjun@example.com,+91 90000 00002,Sample Traders,Purchase Head,vendor,
+,nobody@example.com,,,,,
+Bad Email,not-an-email,,,,,
+Riya Again,RIYA@example.com,,,,,
