@@ -10,10 +10,15 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@json2csv/plainjs": "^7.0.8",
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.6",
+    "csv-parse": "^7.0.3",
     "dotenv": "^16.6.1",
     "express": "^4.22.3",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.19.1"
+    "mongoose": "^8.19.1",
+    "multer": "^2.5.0"
   }
 }
