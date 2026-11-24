@@ -12,8 +12,8 @@ import {
   CheckCircle2,
   Users,
   ShieldCheck,
-  Zap,
 } from "lucide-react";
+import { authApi, isApiConfigured } from "../services/api";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -63,20 +63,26 @@ const Register = () => {
       return;
     }
 
-    // UI-only registration until your backend API is connected.
     setLoading(true);
 
     try {
-      // Replace this block with your registration API request.
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      if (!isApiConfigured()) {
+        navigate("/login", {
+          state: { message: "Demo account ready. Connect VITE_API_URL to enable persistent registration." },
+        });
+        return;
+      }
 
-      navigate("/login", {
-        state: {
-          message: "Registration UI tested. Connect your backend to create an account.",
-        },
+      await authApi.register({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
       });
-    } catch {
-      setError("Something went wrong. Please try again.");
+      navigate("/login", {
+        state: { message: "Account created. Sign in to continue." },
+      });
+    } catch (requestError) {
+      setError(requestError.message);
     } finally {
       setLoading(false);
     }

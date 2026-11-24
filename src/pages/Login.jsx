@@ -10,6 +10,7 @@ import {
   LockKeyhole,
   ShieldCheck,
 } from "lucide-react";
+import { authApi, isApiConfigured } from "../services/api";
 
 export default function Login() {
   const location = useLocation();
@@ -19,10 +20,11 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const message = location.state?.message;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
@@ -38,7 +40,24 @@ export default function Login() {
       return;
     }
 
-    navigate("/dashboard");
+    if (!isApiConfigured()) {
+      navigate("/dashboard");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await authApi.login({ email: trimmedEmail, password });
+      const token = data.token || data.accessToken;
+      if (!token) throw new Error("Login succeeded but no access token was returned.");
+      localStorage.setItem("contactx_token", token);
+      if (data.user) localStorage.setItem("contactx_user", JSON.stringify(data.user));
+      navigate("/dashboard");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -220,13 +239,16 @@ export default function Login() {
 
               <button
                 type="submit"
+                disabled={loading}
                 className="register-submit group flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:bg-blue-700"
               >
-                Sign in
-                <ArrowRight
-                  size={17}
-                  className="transition-transform group-hover:translate-x-1"
-                />
+                {loading ? "Signing in..." : "Sign in"}
+                {!loading && (
+                  <ArrowRight
+                    size={17}
+                    className="transition-transform group-hover:translate-x-1"
+                  />
+                )}
               </button>
             </form>
 

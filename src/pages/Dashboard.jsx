@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   CalendarDays,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import demoContacts from "../data/demo-contacts.json";
+import { contactsApi, isApiConfigured } from "../services/api";
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -239,6 +240,37 @@ export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("overview");
   const [search, setSearch] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
+  const [loading, setLoading] = useState(isApiConfigured());
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!isApiConfigured()) return;
+
+    let ignore = false;
+    const timeout = window.setTimeout(() => {
+      contactsApi
+        .list({ search })
+        .then((data) => {
+          if (ignore) return;
+          const records = Array.isArray(data)
+            ? data
+            : data?.contacts || data?.items || data?.data || [];
+          setContacts(records);
+          setError("");
+        })
+        .catch((requestError) => {
+          if (!ignore) setError(requestError.message);
+        })
+        .finally(() => {
+          if (!ignore) setLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timeout);
+    };
+  }, [search]);
 
   const currentMonth = getLocalDateString().slice(0, 7);
   const today = getLocalDateString();
@@ -279,19 +311,49 @@ export default function Dashboard() {
   const availableLetters = new Set(Object.keys(contactGroups));
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-  function addContact(contact) {
-    setContacts((current) => [
-      {
-        ...contact,
-        id: Math.max(0, ...current.map((item) => item.id)) + 1,
-        createdAt: new Date().toISOString(),
-      },
-      ...current,
-    ]);
-    setShowAddContact(false);
+  async function addContact(contact) {
+    if (!isApiConfigured()) {
+      setContacts((current) => [
+        {
+          ...contact,
+          id: Math.max(0, ...current.map((item) => item.id)) + 1,
+          createdAt: new Date().toISOString(),
+        },
+        ...current,
+      ]);
+      setShowAddContact(false);
+      return;
+    }
+
+    try {
+      const data = await contactsApi.create(contact);
+      const created = data?.contact || data;
+      setContacts((current) => [created, ...current]);
+      setShowAddContact(false);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   }
 
-  function toggleFavorite(id) {
+  async function toggleFavorite(id) {
+    const contact = contacts.find((item) => item.id === id || item._id === id);
+    if (!contact) return;
+
+    if (isApiConfigured()) {
+      try {
+        const data = await contactsApi.update(id, { favorite: !contact.favorite });
+        const updated = data?.contact || data;
+        setContacts((current) =>
+          current.map((item) =>
+            item.id === id || item._id === id ? updated : item,
+          ),
+        );
+      } catch (requestError) {
+        setError(requestError.message);
+      }
+      return;
+    }
+
     setContacts((current) =>
       current.map((contact) =>
         contact.id === id
@@ -303,6 +365,18 @@ export default function Dashboard() {
 
   const pageTitle =
     navigation.find((item) => item.id === activeSection)?.label ?? "Overview";
+  const savedUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("contactx_user") || "null");
+    } catch {
+      return null;
+    }
+  })();
+
+  function signOut() {
+    localStorage.removeItem("contactx_token");
+    localStorage.removeItem("contactx_user");
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f6f8] text-slate-900">
@@ -349,9 +423,11 @@ export default function Dashboard() {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-slate-800">
-                Demo account
+                {savedUser?.name || (isApiConfigured() ? "ContactX account" : "Demo account")}
               </p>
-              <p className="mt-0.5 text-xs text-slate-400">Local workspace</p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {isApiConfigured() ? "Workspace" : "Local workspace"}
+              </p>
             </div>
           </div>
         </div>
@@ -374,10 +450,11 @@ export default function Dashboard() {
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <span className="hidden text-xs text-slate-400 sm:block">
-                Demo data
+                {isApiConfigured() ? "Synced workspace" : "Demo data"}
               </span>
               <Link
                 className="text-xs font-medium text-slate-500 transition hover:text-slate-800"
+                onClick={signOut}
                 to="/login"
               >
                 Sign out
@@ -433,6 +510,16 @@ export default function Dashboard() {
               </button>
             </div>
           </section>
+
+          {error && (
+            <div className="mt-5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
+              {error}
+            </div>
+          )}
+
+          {loading && (
+            <div className="mt-5 text-sm text-slate-500">Loading contacts...</div>
+          )}
 
           <section
             aria-label="Contact summary"
@@ -702,7 +789,9 @@ export default function Dashboard() {
           </section>
 
           <p className="mt-5 text-xs text-slate-400">
-            Demo data is temporary and resets when you refresh.
+            {isApiConfigured()
+              ? "Changes are saved to your ContactX account."
+              : "Demo data is temporary and resets when you refresh."}
           </p>
         </div>
       </main>
