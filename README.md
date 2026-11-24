@@ -60,3 +60,7 @@ npm test --prefix server
 ```
 
 Existing JSON files are legacy data and are not used by the MongoDB API. No automatic import is performed.
+
+## Deployment
+
+The GitHub Actions workflow builds and deploys the React frontend. Set the repository Actions variable `VITE_API_URL` to the public HTTPS base URL of the Express API (for example, `https://api.example.com/api`). Set `CORS_ORIGINS` on the API server to include the GitHub Pages origin.

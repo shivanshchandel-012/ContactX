@@ -58,6 +58,11 @@ const Register = () => {
       return;
     }
 
+    if (!/\d/.test(formData.password)) {
+      setError("Password must contain at least one number.");
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
       return;

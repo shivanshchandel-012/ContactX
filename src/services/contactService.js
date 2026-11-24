@@ -1,6 +1,6 @@
 import { authService } from "./authService";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
 
 async function request(path, options = {}) {
   const headers = {

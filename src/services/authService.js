@@ -2,7 +2,7 @@
 const TOKEN_KEY = "contactx_token";
 const USER_KEY = "contactx_user";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
 
 // Safely parse backend responses
 async function readResponse(response) {
