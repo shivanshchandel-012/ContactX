@@ -27,7 +27,7 @@ function isValidFollowUp(value) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function parseContactBody(body, partial = false) {
+export function parseContactBody(body, partial = false) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw httpError(400, "Request body must be a JSON object.");
   }
