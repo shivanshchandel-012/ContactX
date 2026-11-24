@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "server": "node server/server.js",
     "server:dev": "node --watch server/server.js",
-    "dev:all": "concurrently -n \"client,server\" -c \"cyan,magenta\" \"vite\" \"node --watch server/server.js\""
+    "dev:all": "concurrently -n \"client,server\" -c \"cyan,magenta\" \"vite\" \"node --watch server/server.js\"",
+    "test": "vitest run",
+    "test:all": "vitest run && npm test --prefix server"
   },
   "dependencies": {
     "lucide-react": "^1.61.0",
