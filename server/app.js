@@ -6,6 +6,9 @@ import cors from "cors";
 import multer from "multer";
 import csvRoutes from "./routes/csv.js";
 import photoRoutes from "./routes/photos.js";
+import interactionRoutes from "./routes/interactions.js";
+import followUpRoutes from "./routes/followUps.js";
+import dashboardRoutes from "./routes/dashboard.js";
 
 export const app = express();
 
@@ -64,6 +67,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/contacts", csvRoutes);
 app.use("/api/contacts", photoRoutes);
 app.use("/api/contacts", contactRoutes);
+app.use("/api/contacts", interactionRoutes);
+app.use("/api/follow-ups", followUpRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found." });
