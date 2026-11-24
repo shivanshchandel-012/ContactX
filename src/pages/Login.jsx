@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -26,11 +26,14 @@ export default function Login() {
 
   const message = location.state?.message;
 
-  if (location.state?.registeredEmail && location.state.registeredEmail !== prevEmail) {
-    setPrevEmail(location.state.registeredEmail);
-    setEmail(location.state.registeredEmail);
-    setPassword("");
-  }
+  useEffect(() => {
+    const registeredEmail = location.state?.registeredEmail;
+    if (registeredEmail && registeredEmail !== prevEmail) {
+      setPrevEmail(registeredEmail);
+      setEmail(registeredEmail);
+      setPassword("");
+    }
+  }, [location.state?.registeredEmail, prevEmail]);
 
 
 
