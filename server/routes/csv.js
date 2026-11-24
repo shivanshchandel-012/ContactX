@@ -58,5 +58,37 @@ router.post(
   }),
 );
 
+// GET /api/contacts/export?view=all|favorites|followups|trash&search=&tag=
+router.get(
+    "/export",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const view = typeof req.query.view === "string" ? req.query.view : "all";
+      const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+      const tag = typeof req.query.tag === "string" ? req.query.tag.trim() : "";
+      if (!VIEWS.has(view)) throw httpError(400, "view must be all, favorites, followups or trash.");
+      if (search.length > 100 || tag.length > 40) throw httpError(400, "Search text is too long.");
+  
+      // Filtering happens in the database query, not in JavaScript.
+      const filter = { owner: req.user.id, deletedAt: view === "trash" ? { $ne: null } : null };
+      if (view === "favorites") filter.favorite = true;
+      if (view === "followups") {
+        const weekAhead = new Date();
+        weekAhead.setUTCDate(weekAhead.getUTCDate() + 7);
+        filter.followUp = { $ne: null, $lte: weekAhead };
+      }
+      if (tag) filter.tags = tag;
+      if (search) {
+        const pattern = new RegExp(escapeRegex(search), "i");
+        filter.$or = ["name", "email", "phone", "company", "role", "tags"].map((field) => ({ [field]: pattern }));
+      }
+  
+      const contacts = await Contact.find(filter).sort({ name: 1 }).lean();
+      const date = new Date().toISOString().slice(0, 10);
+      res.set("Content-Type", "text/csv; charset=utf-8");
+      res.attachment(`contactx-${view}-${date}.csv`);
+      return res.send(contactsToCsv(contacts));
+    }),
+  );
 
 export default router;
