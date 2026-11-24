@@ -2,10 +2,28 @@ import express from "express";
 import mongoose from "mongoose";
 import authRoutes from "./routes/auth.js";
 import contactRoutes from "./routes/contacts.js";
+import cors from "cors";
+import multer from "multer";
+import csvRoutes from "./routes/csv.js";
+import photoRoutes from "./routes/photos.js";
 
 export const app = express();
 
 app.disable("x-powered-by");
+// CLIENT_URL can hold several origins separated by commas.
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      const allowed = (process.env.CLIENT_URL || "")
+        .split(",")
+        .map((url) => url.trim().replace(/\/$/, ""))
+        .filter(Boolean);
+      callback(null, !origin || allowed.includes(origin));
+    },
+    exposedHeaders: ["Content-Disposition"],
+  }),
+);
+
 app.use(express.json({ limit: "20kb" }));
 
 app.get("/api/health", (_req, res) => {
@@ -17,6 +35,8 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/contacts", csvRoutes);
+app.use("/api/contacts", photoRoutes);
 app.use("/api/contacts", contactRoutes);
 
 app.use((_req, res) => {
@@ -32,6 +52,22 @@ app.use((error, _req, res, next) => {
 
   if (error.type === "entity.too.large") {
     return res.status(413).json({ success: false, message: "Request body is too large." });
+  }
+
+  if (error instanceof multer.MulterError) {
+    const tooLarge = error.code === "LIMIT_FILE_SIZE";
+    return res.status(tooLarge ? 413 : 400).json({
+      success: false,
+      message: tooLarge
+        ? "The uploaded file is too large."
+        : error.code === "LIMIT_UNEXPECTED_FILE"
+          ? `Unexpected file field "${error.field}".`
+          : "The file upload is invalid.",
+    });
+  }
+
+  if (/^Multipart:|Unexpected end of form/.test(error.message || "")) {
+    return res.status(400).json({ success: false, message: "The file upload is invalid." });
   }
 
   if (error.code === 11000) {
