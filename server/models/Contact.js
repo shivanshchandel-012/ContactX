@@ -53,7 +53,25 @@ contactSchema.index(
     name: "unique_active_contact_email_per_owner",
   },
 );
+contactSchema.index(
+  { owner: 1, deletedAt: 1, updatedAt: -1 },
+  { name: "owner_active_contacts_updated" },
+);
 
+contactSchema.index(
+  { owner: 1, deletedAt: 1, favorite: 1, updatedAt: -1 },
+  { name: "owner_favorites_updated" },
+);
+
+contactSchema.index(
+  { owner: 1, deletedAt: 1, followUp: 1 },
+  { name: "owner_followups_date" },
+);
+
+contactSchema.index(
+  { owner: 1, deletedAt: 1, company: 1 },
+  { name: "owner_company_filter" },
+);
 contactSchema.set("toJSON", {
   transform: (_document, value) => {
     value.id = value._id.toString();

@@ -83,15 +83,107 @@ async function ensureEmailIsAvailable(owner, email, excludedId) {
   }
 }
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parsePositiveInt(value, fallback, max = Infinity) {
+  if (value === undefined) return fallback;
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw httpError(400, "Pagination values must be positive integers.");
+  }
+
+  return Math.min(parsed, max);
+}
+
+const allowedSortFields = new Set([
+  "name",
+  "createdAt",
+  "updatedAt",
+  "followUp",
+]);
+
 router.use(requireAuth);
+
 
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const contacts = await Contact.find({ owner: req.user.id, deletedAt: null }).sort({ updatedAt: -1 });
-    return res.json({ success: true, contacts });
+    const page = parsePositiveInt(req.query.page, 1);
+    const limit = parsePositiveInt(req.query.limit, 10, 100);
+    const skip = (page - 1) * limit;
+
+    const sortBy = req.query.sortBy || "updatedAt";
+    const order = req.query.order || "desc";
+
+    if (!allowedSortFields.has(sortBy)) {
+      throw httpError(400, "Invalid sort field.");
+    }
+
+    if (!["asc", "desc"].includes(order)) {
+      throw httpError(400, "Sort order must be asc or desc.");
+    }
+
+    const filter = {
+      owner: req.user.id,
+      deletedAt: null,
+    };
+
+    if (req.query.search) {
+      const search = escapeRegex(String(req.query.search).trim());
+
+      if (search) {
+        filter.$or = ["name", "email", "company", "phone"].map((field) => ({
+          [field]: { $regex: search, $options: "i" },
+        }));
+      }
+    }
+
+    if (req.query.favorite !== undefined) {
+      if (!["true", "false"].includes(req.query.favorite)) {
+        throw httpError(400, "favorite must be true or false.");
+      }
+
+      filter.favorite = req.query.favorite === "true";
+    }
+
+    if (req.query.company) {
+      filter.company = {
+        $regex: `^${escapeRegex(String(req.query.company).trim())}$`,
+        $options: "i",
+      };
+    }
+
+    if (req.query.tag) {
+      filter.tags = String(req.query.tag).trim();
+    }
+
+    const [contacts, total] = await Promise.all([
+      Contact.find(filter)
+        .sort({ [sortBy]: order === "asc" ? 1 : -1 })
+        .skip(skip)
+        .limit(limit),
+      Contact.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      contacts,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: skip + contacts.length < total,
+        hasPrevPage: page > 1,
+      },
+    });
   }),
 );
+
 
 router.get(
   "/trash",
@@ -111,6 +203,85 @@ router.post(
     await ensureEmailIsAvailable(req.user.id, values.email);
     const contact = await Contact.create({ ...values, owner: req.user.id });
     return res.status(201).json({ success: true, contact });
+  }),
+);
+
+router.get(
+  "/favorites",
+  asyncHandler(async (req, res) => {
+    const page = parsePositiveInt(req.query.page, 1);
+    const limit = parsePositiveInt(req.query.limit, 10, 100);
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      owner: req.user.id,
+      deletedAt: null,
+      favorite: true,
+    };
+
+    const [contacts, total] = await Promise.all([
+      Contact.find(filter)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Contact.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      contacts,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  }),
+);
+
+router.get(
+  "/follow-ups",
+  asyncHandler(async (req, res) => {
+    const page = parsePositiveInt(req.query.page, 1);
+    const limit = parsePositiveInt(req.query.limit, 10, 100);
+    const skip = (page - 1) * limit;
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const filter = {
+      owner: req.user.id,
+      deletedAt: null,
+      followUp: { $ne: null },
+    };
+
+    if (req.query.status === "overdue") {
+      filter.followUp.$lt = today;
+    } else if (req.query.status === "upcoming") {
+      filter.followUp.$gte = today;
+    } else if (req.query.status !== undefined && req.query.status !== "all") {
+      throw httpError(400, "Status must be overdue, upcoming or all.");
+    }
+
+    const [contacts, total] = await Promise.all([
+      Contact.find(filter)
+        .sort({ followUp: 1 })
+        .skip(skip)
+        .limit(limit),
+      Contact.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      contacts,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   }),
 );
 
