@@ -1,15 +1,19 @@
 {
   "name": "contactx-server",
   "version": "1.0.0",
-  "description": "Simple Node.js backend using built-in http module and JSON file database",
+  "description": "ContactX Express API backed by MongoDB",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "jsonwebtoken": "^9.0.2"
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.19.1"
   }
 }
