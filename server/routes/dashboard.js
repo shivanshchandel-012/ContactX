@@ -20,6 +20,7 @@ router.get(
 
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
     const activeContacts = {
       owner,
@@ -27,13 +28,26 @@ router.get(
     };
     const activeContactIds = await Contact.distinct("_id", activeContacts);
 
-    const [totalContacts, favoriteContacts, upcomingFollowUps, overdueFollowUps, recentInteractions] =
+    const [
+      totalContacts,
+      favoriteContacts,
+      addedThisMonth,
+      upcomingFollowUps,
+      overdueFollowUps,
+      dueFollowUps,
+      recentInteractions,
+    ] =
       await Promise.all([
         Contact.countDocuments(activeContacts),
 
         Contact.countDocuments({
           ...activeContacts,
           favorite: true,
+        }),
+
+        Contact.countDocuments({
+          ...activeContacts,
+          createdAt: { $gte: monthStart },
         }),
 
         FollowUp.countDocuments({
@@ -50,6 +64,11 @@ router.get(
           dueAt: { $lt: today },
         }),
 
+        Contact.countDocuments({
+          ...activeContacts,
+          followUp: { $ne: null, $lt: tomorrow },
+        }),
+
         Interaction.find({ owner })
           .sort({ occurredAt: -1 })
           .limit(5)
@@ -61,8 +80,10 @@ router.get(
       summary: {
         totalContacts,
         favoriteContacts,
+        addedThisMonth,
         upcomingFollowUps,
         overdueFollowUps,
+        dueFollowUps,
         recentInteractions,
       },
     });

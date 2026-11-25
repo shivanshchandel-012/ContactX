@@ -48,6 +48,41 @@ async function uploadFile(path, field, file) {
 }
 
 export const contactService = {
+  async list(filters = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        params.set(key, String(value));
+      }
+    });
+    const query = params.toString();
+    const data = await request(`/contacts${query ? `?${query}` : ""}`);
+    return {
+      contacts: data.contacts,
+      pagination: data.pagination,
+    };
+  },
+
+  async summary() {
+    const data = await request("/dashboard/summary");
+    return data.summary;
+  },
+
+  async listTrash(filters = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        params.set(key, String(value));
+      }
+    });
+    const query = params.toString();
+    const data = await request(`/contacts/trash${query ? `?${query}` : ""}`);
+    return {
+      contacts: data.contacts,
+      pagination: data.pagination,
+    };
+  },
+
     // Returns { total, imported, failed, errors: [{ line, name, message }] }
     async importCsv(file) {
       return uploadFile("/contacts/import", "file", file);
@@ -82,16 +117,6 @@ export const contactService = {
       const data = await uploadFile(`/contacts/${encodeURIComponent(id)}/photo`, "photo", file);
       return data.contact;
     },
-  async list() {
-    const data = await request("/contacts");
-    return data.contacts;
-  },
-
-  async listTrash() {
-    const data = await request("/contacts/trash");
-    return data.contacts;
-  },
-
   async create(contact) {
     const data = await request("/contacts", {
       method: "POST",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDownToLine,
   Bell,
@@ -9,6 +9,7 @@ import {
   Heart,
   LayoutDashboard,
   LogOut,
+  Pencil,
   Plus,
   RotateCcw,
   Search,
@@ -17,7 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authService } from "../services/authService";
 import { contactService } from "../services/contactService";
 
@@ -34,12 +35,6 @@ function getLocalDateString(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function getWeekAhead() {
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  return getLocalDateString(date);
 }
 
 function getInitials(name) {
@@ -119,16 +114,18 @@ function saveFile(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function ContactModal({ onClose, onSave }) {
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    company: "",
-    role: "",
-    tags: "",
-    followUp: "",
-  });
+function ContactModal({ contact, onClose, onSave }) {
+  const [form, setForm] = useState(() => ({
+    name: contact?.name || "",
+    email: contact?.email || "",
+    phone: contact?.phone || "",
+    company: contact?.company || "",
+    role: contact?.role || "",
+    tags: (contact?.tags || []).join(", "),
+    followUp: contact?.followUp
+      ? new Date(contact.followUp).toISOString().slice(0, 10)
+      : "",
+  }));
   const [error, setError] = useState("");
 
   async function handleSubmit(event) {
@@ -150,9 +147,9 @@ function ContactModal({ onClose, onSave }) {
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean),
-        favorite: false,
-        lastContact: "Just added",
-        color: "blue",
+        favorite: contact?.favorite ?? false,
+        lastContact: contact?.lastContact || "Just added",
+        color: contact?.color || "blue",
       });
     } catch (saveError) {
       setError(saveError.message || "Failed to save contact.");
@@ -178,7 +175,7 @@ function ContactModal({ onClose, onSave }) {
               className="mt-1 text-2xl font-bold tracking-tight text-slate-900"
               id="add-contact-title"
             >
-              Add a contact
+              {contact ? "Edit contact" : "Add a contact"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               Add the details you want to keep on hand.
@@ -253,7 +250,7 @@ function ContactModal({ onClose, onSave }) {
               type="submit"
             >
               <Plus size={16} />
-              Add contact
+              {contact ? "Save changes" : "Add contact"}
             </button>
           </div>
         </form>
@@ -264,6 +261,7 @@ function ContactModal({ onClose, onSave }) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [currentUser, setCurrentUser] = useState(
     () => authService.getUser() || { name: "User", email: "" }
   );
@@ -271,32 +269,129 @@ export default function Dashboard() {
   const [deletedContacts, setDeletedContacts] = useState([]);
   const [contactsLoading, setContactsLoading] = useState(true);
   const [contactsError, setContactsError] = useState("");
-  const [activeSection, setActiveSection] = useState("overview");
-  const [search, setSearch] = useState("");
+  const [summaryError, setSummaryError] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
+  const [editingContact, setEditingContact] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [uploadingPhotoId, setUploadingPhotoId] = useState(null);
+  const [refreshData, setRefreshData] = useState(0);
+  const [summary, setSummary] = useState({
+    totalContacts: 0,
+    favoriteContacts: 0,
+    addedThisMonth: 0,
+    dueFollowUps: 0,
+  });
+  const [followUpPreview, setFollowUpPreview] = useState([]);
+
+  const validSections = new Set(navigation.map(({ id }) => id));
+  const requestedSection = searchParams.get("view");
+  const activeSection = validSections.has(requestedSection)
+    ? requestedSection
+    : "overview";
+  const search = searchParams.get("search") || "";
+  const companyFilter = searchParams.get("company") || "";
+  const tagFilter = searchParams.get("tag") || "";
+  const page = Math.max(1, Number.parseInt(searchParams.get("page") || "1", 10) || 1);
+  const allowedPageSizes = [10, 25, 50];
+  const requestedPageSize = Number.parseInt(searchParams.get("limit") || "10", 10);
+  const pageSize = allowedPageSizes.includes(requestedPageSize) ? requestedPageSize : 10;
+  const allowedSortFields = ["name", "createdAt", "updatedAt", "followUp"];
+  const requestedPrimarySort = searchParams.get("sortBy") || "updatedAt";
+  const primarySort = allowedSortFields.includes(requestedPrimarySort)
+    ? requestedPrimarySort
+    : "updatedAt";
+  const requestedSecondarySort = searchParams.get("thenBy") || "";
+  const secondarySort =
+    allowedSortFields.includes(requestedSecondarySort) &&
+    requestedSecondarySort !== primarySort
+      ? requestedSecondarySort
+      : "";
+  const sortBy = [primarySort, secondarySort].filter(Boolean).join(",");
+  const order = searchParams.get("order") === "asc" ? "asc" : "desc";
+  const [pagination, setPagination] = useState({
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0,
+  });
+
+  const updateTableParams = useCallback((changes, resetPage = false) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(changes).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === "") next.delete(key);
+      else next.set(key, String(value));
+    });
+    if (resetPage) next.set("page", "1");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  function setActiveSection(section) {
+    updateTableParams({ view: section === "overview" ? null : section }, true);
+  }
+
+  function setSearch(value) {
+    updateTableParams({ search: value }, true);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([contactService.list(), contactService.listTrash()])
-      .then(([activeContacts, trashedContacts]) => {
-        if (cancelled) return;
-        setContacts(activeContacts);
-        setDeletedContacts(trashedContacts);
-      })
-      .catch((error) => {
-        if (!cancelled) setContactsError(error.message || "Failed to load contacts.");
-      })
-      .finally(() => {
-        if (!cancelled) setContactsLoading(false);
-      });
+    const timer = window.setTimeout(() => {
+      setContactsLoading(true);
+      setContactsError("");
+      const filters = {
+        page,
+        limit: pageSize,
+        sortBy,
+        order,
+        search,
+        company: companyFilter,
+        tag: tagFilter,
+      };
+      const request =
+        activeSection === "trash"
+          ? contactService.listTrash(filters)
+          : contactService.list({
+              ...filters,
+              ...(activeSection === "favorites" ? { favorite: true } : {}),
+              ...(activeSection === "followups" ? { followUpDays: 7 } : {}),
+            });
 
+      request
+        .then(({ contacts: resultContacts, pagination: resultPagination }) => {
+          if (cancelled) return;
+          const lastPage = Math.max(1, resultPagination.totalPages);
+          if (page > lastPage) {
+            updateTableParams({ page: lastPage });
+            return;
+          }
+          if (activeSection === "trash") setDeletedContacts(resultContacts);
+          else setContacts(resultContacts);
+          setPagination(resultPagination);
+        })
+        .catch((error) => {
+          if (!cancelled) setContactsError(error.message || "Failed to load contacts.");
+        })
+        .finally(() => {
+          if (!cancelled) setContactsLoading(false);
+        });
+    }, 250);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [
+    activeSection,
+    companyFilter,
+    order,
+    page,
+    pageSize,
+    refreshData,
+    search,
+    sortBy,
+    tagFilter,
+    updateTableParams,
+  ]);
 
   useEffect(() => {
     authService
@@ -315,56 +410,59 @@ export default function Dashboard() {
   };
 
 
-  const currentMonth = getLocalDateString().slice(0, 7);
   const today = getLocalDateString();
   const formattedToday = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
-  const weekAhead = getWeekAhead();
-  const dueCount = contacts.filter(
-    (contact) => contact.followUp && contact.followUp <= today,
-  ).length;
-  const addedThisMonth = contacts.filter(
-    (contact) => contact.createdAt?.startsWith(currentMonth),
-  ).length;
-
-  const filteredContacts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const sectionContacts = activeSection === "trash" ? deletedContacts : contacts;
-    return sectionContacts.filter((contact) => {
-      const matchesSearch =
-        !query ||
-        [
-          contact.name,
-          contact.email,
-          contact.phone,
-          contact.company,
-          contact.role,
-          ...(contact.tags ?? []),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(query);
-      if (!matchesSearch) return false;
-      if (activeSection === "favorites") return contact.favorite;
-      if (activeSection === "followups") {
-        return contact.followUp && contact.followUp <= weekAhead;
-      }
-      return true;
-    });
-  }, [activeSection, contacts, deletedContacts, search, weekAhead]);
+  const dueCount = summary.dueFollowUps || 0;
+  const addedThisMonth = summary.addedThisMonth || 0;
+  const filteredContacts = activeSection === "trash" ? deletedContacts : contacts;
 
   const contactGroups = getContactGroups(filteredContacts);
   const availableLetters = new Set(Object.keys(contactGroups));
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      contactService.summary(),
+      contactService.list({
+        page: 1,
+        limit: 4,
+        sortBy: "followUp",
+        order: "asc",
+        followUpDays: 7,
+      }),
+    ])
+      .then(([nextSummary, upcoming]) => {
+        if (cancelled) return;
+        setSummary(nextSummary);
+        setFollowUpPreview(upcoming.contacts);
+        setSummaryError("");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setSummaryError(error.message || "Failed to load dashboard summary.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshData]);
+
   async function handleExport() {
     setContactsError("");
     try {
       const view = ["favorites", "followups", "trash"].includes(activeSection) ? activeSection : "all";
-      const { blob, filename } = await contactService.exportCsv({ view, search: search.trim() });
+      const { blob, filename } = await contactService.exportCsv({
+        view,
+        search: search.trim(),
+        company: companyFilter,
+        tag: tagFilter,
+      });
       saveFile(blob, filename);
     } catch (error) {
       setContactsError(error.message);
@@ -381,7 +479,10 @@ export default function Dashboard() {
     try {
       const result = await contactService.importCsv(file);
       setImportResult(result);
-      if (result.imported > 0) setContacts(await contactService.list());
+      if (result.imported > 0) {
+        updateTableParams({ page: "1" });
+        setRefreshData((value) => value + 1);
+      }
     } catch (error) {
       setContactsError(error.message);
     } finally {
@@ -406,10 +507,21 @@ export default function Dashboard() {
   }
 
   async function addContact(contact) {
-    const createdContact = await contactService.create(contact);
-    setContacts((current) => [createdContact, ...current]);
+    await contactService.create(contact);
+    updateTableParams({ page: "1" });
+    setRefreshData((value) => value + 1);
     setContactsError("");
     setShowAddContact(false);
+  }
+
+  async function updateContact(contact) {
+    const updatedContact = await contactService.update(editingContact.id, contact);
+    setContacts((current) =>
+      current.map((item) => (item.id === updatedContact.id ? updatedContact : item)),
+    );
+    setEditingContact(null);
+    setContactsError("");
+    setRefreshData((value) => value + 1);
   }
 
   async function toggleFavorite(id) {
@@ -423,6 +535,7 @@ export default function Dashboard() {
         current.map((item) => (item.id === id ? updatedContact : item)),
       );
       setContactsError("");
+      setRefreshData((value) => value + 1);
     } catch (error) {
       setContactsError(error.message || "Failed to update contact.");
     }
@@ -434,6 +547,7 @@ export default function Dashboard() {
       setContacts((current) => current.filter((item) => item.id !== id));
       setDeletedContacts((current) => [deletedContact, ...current]);
       setContactsError("");
+      setRefreshData((value) => value + 1);
     } catch (error) {
       setContactsError(error.message || "Failed to move contact to trash.");
     }
@@ -445,6 +559,7 @@ export default function Dashboard() {
       setDeletedContacts((current) => current.filter((item) => item.id !== id));
       setContacts((current) => [restoredContact, ...current]);
       setContactsError("");
+      setRefreshData((value) => value + 1);
     } catch (error) {
       setContactsError(error.message || "Failed to restore contact.");
     }
@@ -626,9 +741,9 @@ export default function Dashboard() {
             </div>
           </section>
 
-          {contactsError && (
+          {(contactsError || summaryError) && (
             <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
-              {contactsError}
+              {contactsError || summaryError}
             </p>
           )}
           {importResult && (
@@ -665,12 +780,12 @@ export default function Dashboard() {
             className="mt-6 grid grid-cols-2 divide-x divide-slate-200 rounded-xl border border-slate-200 bg-white sm:grid-cols-4"
           >
             {[
-              { label: "Total contacts", value: contacts.length },
+              { label: "Total contacts", value: summary.totalContacts },
               { label: "Added this month", value: addedThisMonth },
               { label: "Follow-ups due", value: dueCount },
               {
                 label: "Favourites",
-                value: contacts.filter((contact) => contact.favorite).length,
+                value: summary.favoriteContacts,
               },
             ].map(({ label, value }) => (
               <article
@@ -693,8 +808,8 @@ export default function Dashboard() {
                     {activeSection === "trash" ? "Deleted contacts" : "Contacts"}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
-                    {filteredContacts.length}{" "}
-                    {filteredContacts.length === 1 ? "contact" : "contacts"}
+                    {pagination.total}{" "}
+                    {pagination.total === 1 ? "contact" : "contacts"}
                   </p>
                 </div>
                 <label className="flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 px-3 text-slate-400 transition focus-within:border-blue-400 sm:w-64">
@@ -707,6 +822,93 @@ export default function Dashboard() {
                     type="search"
                     value={search}
                   />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
+                <label className="sr-only" htmlFor="contact-company-filter">
+                  Filter by company
+                </label>
+                <input
+                  id="contact-company-filter"
+                  className="min-h-9 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+                  onChange={(event) =>
+                    updateTableParams({ company: event.target.value }, true)
+                  }
+                  placeholder="Company"
+                  value={companyFilter}
+                />
+                <label className="sr-only" htmlFor="contact-tag-filter">
+                  Filter by tag
+                </label>
+                <input
+                  id="contact-tag-filter"
+                  className="min-h-9 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+                  onChange={(event) =>
+                    updateTableParams({ tag: event.target.value }, true)
+                  }
+                  placeholder="Tag"
+                  value={tagFilter}
+                />
+                <label className="sr-only" htmlFor="contact-sort">
+                  Sort contacts by
+                </label>
+                <select
+                  id="contact-sort"
+                  className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                  onChange={(event) =>
+                    updateTableParams({ sortBy: event.target.value }, true)
+                  }
+                  value={primarySort}
+                >
+                  <option value="updatedAt">Recently updated</option>
+                  <option value="name">Name</option>
+                  <option value="createdAt">Date added</option>
+                  <option value="followUp">Follow-up date</option>
+                </select>
+                <label className="sr-only" htmlFor="contact-sort-then">
+                  Then sort by
+                </label>
+                <select
+                  id="contact-sort-then"
+                  className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                  onChange={(event) =>
+                    updateTableParams({ thenBy: event.target.value }, true)
+                  }
+                  value={secondarySort}
+                >
+                  <option value="">Then by (optional)</option>
+                  {allowedSortFields
+                    .filter((field) => field !== primarySort)
+                    .map((field) => (
+                      <option key={field} value={field}>
+                        Then by {field === "createdAt" ? "date added" : field === "updatedAt" ? "recently updated" : field === "followUp" ? "follow-up date" : "name"}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  aria-label={`Sort ${order === "asc" ? "descending" : "ascending"}`}
+                  className="min-h-9 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+                  onClick={() =>
+                    updateTableParams({ order: order === "asc" ? "desc" : "asc" }, true)
+                  }
+                  type="button"
+                >
+                  {order === "asc" ? "Ascending" : "Descending"}
+                </button>
+                <label className="ml-auto flex items-center gap-2 text-xs text-slate-500">
+                  Rows
+                  <select
+                    aria-label="Rows per page"
+                    className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-700"
+                    onChange={(event) =>
+                      updateTableParams({ limit: event.target.value }, true)
+                    }
+                    value={pageSize}
+                  >
+                    {allowedPageSizes.map((size) => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
 
@@ -805,6 +1007,18 @@ export default function Dashboard() {
                             ) : (
                               <>
                                 <button
+                                  aria-label={`Edit ${contact.name}`}
+                                  className="rounded p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+                                  onClick={() => {
+                                    setEditingContact(contact);
+                                    setShowAddContact(true);
+                                  }}
+                                  title="Edit contact"
+                                  type="button"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                <button
                                   aria-label={
                                     contact.favorite
                                       ? `Remove ${contact.name} from favourites`
@@ -889,21 +1103,33 @@ export default function Dashboard() {
                   ))}
                 </nav>
               </div>
-              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 sm:px-5">
-                    <span className="text-xs text-slate-500">
-                      {filteredContacts.length} {filteredContacts.length === 1 ? "contact" : "contacts"}
-                    </span>
-                    {activeSection === "trash" ? (
-                      <span className="text-xs text-slate-400">Deleted contacts can be restored</span>
-                    ) : (
-                      <button
-                        className="text-xs font-medium text-blue-700 hover:text-blue-800"
-                        onClick={() => setActiveSection("contacts")}
-                        type="button"
-                      >
-                        View all contacts <span aria-hidden="true">→</span>
-                      </button>
-                    )}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:px-5">
+                <span className="text-xs text-slate-500">
+                  {pagination.total === 0
+                    ? "0 contacts"
+                    : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, pagination.total)} of ${pagination.total} contacts`}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={page <= 1 || contactsLoading}
+                    onClick={() => updateTableParams({ page: page - 1 })}
+                    type="button"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Page {page} of {Math.max(1, pagination.totalPages)}
+                  </span>
+                  <button
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={page >= pagination.totalPages || contactsLoading}
+                    onClick={() => updateTableParams({ page: page + 1 })}
+                    type="button"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -921,14 +1147,7 @@ export default function Dashboard() {
               </div>
 
               <div className="divide-y divide-slate-100 px-4">
-                {contacts
-                  .filter(
-                    (contact) =>
-                      contact.followUp &&
-                      contact.followUp <= weekAhead,
-                  )
-                  .sort((a, b) => a.followUp.localeCompare(b.followUp))
-                  .slice(0, 4)
+                {followUpPreview
                   .map((contact) => (
                     <article
                       className="flex items-center gap-3 py-3"
@@ -960,11 +1179,7 @@ export default function Dashboard() {
                       </span>
                     </article>
                   ))}
-                {contacts.filter(
-                  (contact) =>
-                    contact.followUp &&
-                    contact.followUp <= weekAhead,
-                ).length === 0 && (
+                {followUpPreview.length === 0 && (
                   <div className="px-2 py-8 text-center">
                     <Check className="mx-auto text-slate-400" size={20} />
                     <p className="mt-2 text-sm font-medium text-slate-700">
@@ -997,8 +1212,12 @@ export default function Dashboard() {
 
       {showAddContact && (
         <ContactModal
-          onClose={() => setShowAddContact(false)}
-          onSave={addContact}
+          contact={editingContact}
+          onClose={() => {
+            setShowAddContact(false);
+            setEditingContact(null);
+          }}
+          onSave={editingContact ? updateContact : addContact}
         />
       )}
     </div>

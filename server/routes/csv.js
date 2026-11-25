@@ -66,8 +66,11 @@ router.get(
       const view = typeof req.query.view === "string" ? req.query.view : "all";
       const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
       const tag = typeof req.query.tag === "string" ? req.query.tag.trim() : "";
+      const company = typeof req.query.company === "string" ? req.query.company.trim() : "";
       if (!VIEWS.has(view)) throw httpError(400, "view must be all, favorites, followups or trash.");
-      if (search.length > 100 || tag.length > 40) throw httpError(400, "Search text is too long.");
+      if (search.length > 100 || tag.length > 40 || company.length > 120) {
+        throw httpError(400, "A filter value is too long.");
+      }
   
       // Filtering happens in the database query, not in JavaScript.
       const filter = { owner: req.user.id, deletedAt: view === "trash" ? { $ne: null } : null };
@@ -78,6 +81,7 @@ router.get(
         filter.followUp = { $ne: null, $lte: weekAhead };
       }
       if (tag) filter.tags = tag;
+      if (company) filter.company = new RegExp(`^${escapeRegex(company)}$`, "i");
       if (search) {
         const pattern = new RegExp(escapeRegex(search), "i");
         filter.$or = ["name", "email", "phone", "company", "role", "tags"].map((field) => ({ [field]: pattern }));

@@ -80,6 +80,23 @@ describe("Contact listing query validation", () => {
     assert.equal(response.status, 400);
   });
 
+  test("rejects duplicate or unsupported multi-column sort fields", async () => {
+    const duplicate = await request("/api/contacts?sortBy=name,name");
+    const unsupported = await request("/api/contacts?sortBy=name,password");
+    assert.equal(duplicate.status, 400);
+    assert.equal(unsupported.status, 400);
+  });
+
+  test("rejects invalid sort fields for the trash view", async () => {
+    const response = await request("/api/contacts/trash?sortBy=password");
+    assert.equal(response.status, 400);
+  });
+
+  test("rejects invalid follow-up date ranges", async () => {
+    const response = await request("/api/contacts?followUpDays=0");
+    assert.equal(response.status, 400);
+  });
+
   test("rejects an invalid sort order", async () => {
     const response = await request("/api/contacts?order=random");
     assert.equal(response.status, 400);

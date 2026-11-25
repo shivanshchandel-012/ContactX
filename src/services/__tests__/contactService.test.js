@@ -19,6 +19,41 @@ afterEach(() => {
 });
 
 describe("contactService file features", () => {
+  test("list sends the server-side table state and returns pagination metadata", async () => {
+    const pagination = { page: 2, limit: 25, total: 31, totalPages: 2 };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ success: true, contacts: [{ id: "c1" }], pagination }),
+    );
+
+    const result = await contactService.list({
+      page: 2,
+      limit: 25,
+      sortBy: "name,createdAt",
+      order: "asc",
+      search: "Riya Shah",
+      company: "Acme",
+      tag: "customer",
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/contacts?page=2&limit=25&sortBy=name%2CcreatedAt&order=asc&search=Riya+Shah&company=Acme&tag=customer",
+    );
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer test-token");
+    expect(result).toEqual({ contacts: [{ id: "c1" }], pagination });
+  });
+
+  test("listTrash sends pagination and filter state", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ success: true, contacts: [], pagination: { total: 0 } }),
+    );
+
+    await contactService.listTrash({ page: 1, limit: 10, search: "Riya" });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/contacts/trash?page=1&limit=10&search=Riya",
+    );
+  });
+
   test("importCsv sends the file as multipart form data with the JWT", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

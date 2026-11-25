@@ -99,6 +99,28 @@ function parsePositiveInt(value, fallback, max = Infinity) {
   return Math.min(parsed, max);
 }
 
+function addTextFilters(filter, query) {
+  if (query.search) {
+    const search = escapeRegex(String(query.search).trim());
+    if (search) {
+      filter.$or = ["name", "email", "company", "phone", "role", "tags"].map((field) => ({
+        [field]: { $regex: search, $options: "i" },
+      }));
+    }
+  }
+
+  if (query.company) {
+    filter.company = {
+      $regex: `^${escapeRegex(String(query.company).trim())}$`,
+      $options: "i",
+    };
+  }
+
+  if (query.tag) {
+    filter.tags = String(query.tag).trim();
+  }
+}
+
 const allowedSortFields = new Set([
   "name",
   "createdAt",
@@ -116,10 +138,14 @@ router.get(
     const limit = parsePositiveInt(req.query.limit, 10, 100);
     const skip = (page - 1) * limit;
 
-    const sortBy = req.query.sortBy || "updatedAt";
+    const sortBy = String(req.query.sortBy || "updatedAt").split(",");
     const order = req.query.order || "desc";
 
-    if (!allowedSortFields.has(sortBy)) {
+    if (
+      sortBy.length > 3 ||
+      new Set(sortBy).size !== sortBy.length ||
+      sortBy.some((field) => !allowedSortFields.has(field))
+    ) {
       throw httpError(400, "Invalid sort field.");
     }
 
@@ -132,15 +158,7 @@ router.get(
       deletedAt: null,
     };
 
-    if (req.query.search) {
-      const search = escapeRegex(String(req.query.search).trim());
-
-      if (search) {
-        filter.$or = ["name", "email", "company", "phone"].map((field) => ({
-          [field]: { $regex: search, $options: "i" },
-        }));
-      }
-    }
+    addTextFilters(filter, req.query);
 
     if (req.query.favorite !== undefined) {
       if (!["true", "false"].includes(req.query.favorite)) {
@@ -150,20 +168,20 @@ router.get(
       filter.favorite = req.query.favorite === "true";
     }
 
-    if (req.query.company) {
-      filter.company = {
-        $regex: `^${escapeRegex(String(req.query.company).trim())}$`,
-        $options: "i",
-      };
-    }
-
-    if (req.query.tag) {
-      filter.tags = String(req.query.tag).trim();
+    if (req.query.followUpDays !== undefined) {
+      const days = parsePositiveInt(req.query.followUpDays, 7, 365);
+      const throughDate = new Date();
+      throughDate.setUTCHours(23, 59, 59, 999);
+      throughDate.setUTCDate(throughDate.getUTCDate() + days);
+      filter.followUp = { $ne: null, $lte: throughDate };
     }
 
     const [contacts, total] = await Promise.all([
       Contact.find(filter)
-        .sort({ [sortBy]: order === "asc" ? 1 : -1 })
+        .sort({
+          ...Object.fromEntries(sortBy.map((field) => [field, order === "asc" ? 1 : -1])),
+          _id: 1,
+        })
         .skip(skip)
         .limit(limit),
       Contact.countDocuments(filter),
@@ -188,11 +206,52 @@ router.get(
 router.get(
   "/trash",
   asyncHandler(async (req, res) => {
-    const contacts = await Contact.find({
+    const page = parsePositiveInt(req.query.page, 1);
+    const limit = parsePositiveInt(req.query.limit, 10, 100);
+    const skip = (page - 1) * limit;
+    const sortBy = String(req.query.sortBy || "updatedAt").split(",");
+    const order = req.query.order || "desc";
+
+    if (
+      sortBy.length > 3 ||
+      new Set(sortBy).size !== sortBy.length ||
+      sortBy.some((field) => !allowedSortFields.has(field))
+    ) {
+      throw httpError(400, "Invalid sort field.");
+    }
+    if (!["asc", "desc"].includes(order)) {
+      throw httpError(400, "Sort order must be asc or desc.");
+    }
+
+    const filter = {
       owner: req.user.id,
       deletedAt: { $ne: null },
-    }).sort({ deletedAt: -1 });
-    return res.json({ success: true, contacts });
+    };
+    addTextFilters(filter, req.query);
+
+    const [contacts, total] = await Promise.all([
+      Contact.find(filter)
+        .sort({
+          ...Object.fromEntries(sortBy.map((field) => [field, order === "asc" ? 1 : -1])),
+          _id: 1,
+        })
+        .skip(skip)
+        .limit(limit),
+      Contact.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      contacts,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: skip + contacts.length < total,
+        hasPrevPage: page > 1,
+      },
+    });
   }),
 );
 
