@@ -1,4 +1,3 @@
-
 import { Router } from "express";
 import Contact from "../models/Contact.js";
 import FollowUp from "../models/FollowUp.js";
@@ -69,7 +68,10 @@ router.get(
           followUp: { $ne: null, $lt: tomorrow },
         }),
 
-        Interaction.find({ owner })
+        Interaction.find({
+          owner,
+          contact: { $in: activeContactIds },
+        })
           .sort({ occurredAt: -1 })
           .limit(5)
           .populate("contact", "name email"),

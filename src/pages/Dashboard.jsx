@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   Bell,
   CalendarDays,
   ChevronDown,
   Check,
-  Clock3,
   Heart,
   LayoutDashboard,
   LogOut,
   Pencil,
+  MessageSquare,
   Plus,
   RotateCcw,
   Search,
@@ -21,6 +21,9 @@ import {
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authService } from "../services/authService";
 import { contactService } from "../services/contactService";
+import { dashboardService } from "../services/dashboardService";
+import { followUpService } from "../services/followUpService";
+import { interactionService } from "../services/interactionService";
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -80,6 +83,40 @@ function formatFollowUp(date) {
   });
 }
 
+function getFollowUpListParams(status) {
+  const params = { page: 1, limit: 100 };
+  if (status === "pending") params.completed = false;
+  if (status === "completed") params.completed = true;
+  return params;
+}
+
+async function loadFollowUpTasks(status) {
+  const data = await followUpService.list(getFollowUpListParams(status));
+  if (!Array.isArray(data.followUps)) {
+    throw new Error("The follow-up response did not contain a task list.");
+  }
+  return data.followUps;
+}
+
+const interactionTypes = [
+  { value: "call", label: "Call" },
+  { value: "email", label: "Email" },
+  { value: "meeting", label: "Meeting" },
+  { value: "message", label: "Message" },
+  { value: "note", label: "Note" },
+];
+
+function formatInteractionDate(value) {
+  const datePart = String(value).slice(0, 10);
+  const date = new Date(`${datePart}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 // function downloadContacts(contacts) {
 //   const columns = ["name", "email", "phone", "company", "role", "tags"];
 //   const escapeCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -125,6 +162,8 @@ function ContactModal({ contact, onClose, onSave }) {
     followUp: contact?.followUp
       ? new Date(contact.followUp).toISOString().slice(0, 10)
       : "",
+    followUpTitle: "",
+    followUpDueAt: "",
   }));
   const [error, setError] = useState("");
 
@@ -138,18 +177,43 @@ function ContactModal({ contact, onClose, onSave }) {
       setError("Enter a valid email address.");
       return;
     }
+    if (Boolean(form.followUpTitle.trim()) !== Boolean(form.followUpDueAt)) {
+      setError("Enter both a follow-up task title and due date.");
+      return;
+    }
+    if (form.followUpTitle.trim().length > 120) {
+      setError("Follow-up task titles must be at most 120 characters.");
+      return;
+    }
     try {
       await onSave({
-        ...form,
+        phone: form.phone,
+        company: form.company,
+        role: form.role,
         name: form.name.trim(),
         email: form.email.trim(),
         tags: form.tags
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean),
-        favorite: contact?.favorite ?? false,
-        lastContact: contact?.lastContact || "Just added",
-        color: contact?.color || "blue",
+        ...(contact
+          ? {
+              favorite: contact.favorite ?? false,
+              lastContact: contact.lastContact || "Just added",
+              color: contact.color || "blue",
+              followUp: form.followUp || null,
+            }
+          : {
+              followUpTask: form.followUpDueAt
+                ? {
+                    title: form.followUpTitle.trim(),
+                    dueAt: form.followUpDueAt,
+                  }
+                : null,
+              favorite: false,
+              lastContact: "Just added",
+              color: "blue",
+            }),
       });
     } catch (saveError) {
       setError(saveError.message || "Failed to save contact.");
@@ -218,19 +282,56 @@ function ContactModal({ contact, onClose, onSave }) {
                 />
               </label>
             ))}
-            <label className="block sm:col-span-2">
-              <span className="text-sm font-medium text-slate-700">
-                Follow-up date
-              </span>
-              <input
-                className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
-                onChange={(event) =>
-                  setForm({ ...form, followUp: event.target.value })
-                }
-                type="date"
-                value={form.followUp}
-              />
-            </label>
+            {contact && (
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">
+                  Legacy contact follow-up date
+                </span>
+                <input
+                  className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                  onChange={(event) =>
+                    setForm({ ...form, followUp: event.target.value })
+                  }
+                  type="date"
+                  value={form.followUp}
+                />
+                <span className="mt-1 block text-xs text-slate-500">
+                  This contact date is separate from Follow-up tasks.
+                </span>
+              </label>
+            )}
+            {!contact && (
+              <>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">
+                    Follow-up task title
+                  </span>
+                  <input
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                    maxLength={120}
+                    onChange={(event) =>
+                      setForm({ ...form, followUpTitle: event.target.value })
+                    }
+                    placeholder="e.g. Send proposal"
+                    type="text"
+                    value={form.followUpTitle}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">
+                    Follow-up due date
+                  </span>
+                  <input
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                    onChange={(event) =>
+                      setForm({ ...form, followUpDueAt: event.target.value })
+                    }
+                    type="date"
+                    value={form.followUpDueAt}
+                  />
+                </label>
+              </>
+            )}
           </div>
           {error && (
             <p className="text-sm text-rose-600" role="alert">
@@ -259,6 +360,525 @@ function ContactModal({ contact, onClose, onSave }) {
   );
 }
 
+function FollowUpModal({
+  contacts,
+  contactsError,
+  contactsLoading,
+  onClose,
+  onSave,
+}) {
+  const [form, setForm] = useState({
+    contactId: "",
+    title: "",
+    description: "",
+    dueAt: getLocalDateString(),
+  });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const title = form.title.trim();
+    const dueAt = new Date(`${form.dueAt}T00:00:00.000Z`);
+
+    if (!form.contactId) {
+      setError("Select a contact for this follow-up.");
+      return;
+    }
+    if (!title || title.length > 120) {
+      setError("Enter a task title of 1 to 120 characters.");
+      return;
+    }
+    if (form.description.length > 2000) {
+      setError("Description must be at most 2000 characters.");
+      return;
+    }
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(form.dueAt) ||
+      Number.isNaN(dueAt.getTime()) ||
+      dueAt.toISOString().slice(0, 10) !== form.dueAt
+    ) {
+      setError("Enter a valid due date.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      await onSave({
+        contactId: form.contactId,
+        title,
+        description: form.description.trim(),
+        dueAt: form.dueAt,
+      });
+    } catch (saveError) {
+      setError(saveError.message || "Failed to create the follow-up task.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onClose();
+      }}
+    >
+      <section
+        aria-labelledby="add-follow-up-title"
+        aria-modal="true"
+        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl sm:p-8"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <h2
+              className="text-2xl font-bold tracking-tight text-slate-900"
+              id="add-follow-up-title"
+            >
+              Create a follow-up task
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Link a task to one of your active contacts.
+            </p>
+          </div>
+          <button
+            aria-label="Close dialog"
+            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            disabled={saving}
+            onClick={onClose}
+            type="button"
+          >
+            <X size={19} />
+          </button>
+        </div>
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">Contact</span>
+            <select
+              className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+              disabled={contactsLoading || contacts.length === 0 || saving}
+              onChange={(event) =>
+                setForm({ ...form, contactId: event.target.value })
+              }
+              required
+              value={form.contactId}
+            >
+              <option value="">
+                {contactsLoading ? "Loading contacts..." : "Select a contact"}
+              </option>
+              {contacts.map((contact) => (
+                <option key={contact.id} value={contact.id}>
+                  {contact.name}
+                  {contact.email ? ` (${contact.email})` : ""}
+                </option>
+              ))}
+            </select>
+            {!contactsLoading && contacts.length === 0 && (
+              <span className="mt-1 block text-xs text-slate-500">
+                {contactsError || "Add an active contact before creating a task."}
+              </span>
+            )}
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">Task title</span>
+            <input
+              className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+              maxLength={120}
+              onChange={(event) =>
+                setForm({ ...form, title: event.target.value })
+              }
+              required
+              type="text"
+              value={form.title}
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">
+              Description
+            </span>
+            <textarea
+              className="mt-1.5 min-h-24 w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+              maxLength={2000}
+              onChange={(event) =>
+                setForm({ ...form, description: event.target.value })
+              }
+              value={form.description}
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">Due date</span>
+            <input
+              className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+              onChange={(event) =>
+                setForm({ ...form, dueAt: event.target.value })
+              }
+              required
+              type="date"
+              value={form.dueAt}
+            />
+          </label>
+
+          {error && (
+            <p className="text-sm text-rose-600" role="alert">
+              {error}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+            <button
+              className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+              disabled={saving}
+              onClick={onClose}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={saving || contactsLoading || contacts.length === 0}
+              type="submit"
+            >
+              <Plus size={16} />
+              {saving ? "Creating..." : "Create task"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function InteractionHistoryModal({ contact, onClose }) {
+  const contactId = contact.id || contact._id;
+  const [historyResult, setHistoryResult] = useState({
+    key: null,
+    interactions: [],
+    error: "",
+  });
+  const [submitError, setSubmitError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const historyRequestKey = `${contactId}:${refreshVersion}`;
+  const interactions = historyResult.interactions;
+  const loading = historyResult.key !== historyRequestKey;
+  const historyError = loading ? "" : historyResult.error;
+  const [form, setForm] = useState({
+    type: "note",
+    title: "",
+    description: "",
+    occurredAt: getLocalDateString(),
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestKey = `${contactId}:${refreshVersion}`;
+    interactionService
+      .list(contactId, { page: 1, limit: 100 })
+      .then((data) => {
+        if (!Array.isArray(data.interactions)) {
+          throw new Error(
+            "The interaction response did not contain a history list.",
+          );
+        }
+        if (!cancelled) {
+          setHistoryResult({
+            key: requestKey,
+            interactions: data.interactions,
+            error: "",
+          });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setHistoryResult({
+            key: requestKey,
+            interactions: [],
+            error: error.message || "Failed to load interaction history.",
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [contactId, refreshVersion]);
+
+  const sortedInteractions = useMemo(
+    () =>
+      [...interactions].sort(
+        (a, b) => new Date(b.occurredAt) - new Date(a.occurredAt),
+      ),
+    [interactions],
+  );
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const title = form.title.trim();
+    const occurredAt = new Date(`${form.occurredAt}T00:00:00.000Z`);
+
+    if (!interactionTypes.some((item) => item.value === form.type)) {
+      setSubmitError("Select a valid interaction type.");
+      return;
+    }
+    if (!title || title.length > 120) {
+      setSubmitError("Enter a title of 1 to 120 characters.");
+      return;
+    }
+    if (form.description.length > 2000) {
+      setSubmitError("Description must be at most 2000 characters.");
+      return;
+    }
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(form.occurredAt) ||
+      Number.isNaN(occurredAt.getTime()) ||
+      occurredAt.toISOString().slice(0, 10) !== form.occurredAt
+    ) {
+      setSubmitError("Enter a valid occurrence date.");
+      return;
+    }
+
+    setSaving(true);
+    setSubmitError("");
+    setSuccessMessage("");
+    try {
+      await interactionService.create(contactId, {
+        type: form.type,
+        title,
+        description: form.description.trim(),
+        occurredAt: form.occurredAt,
+      });
+      setForm({
+        type: form.type,
+        title: "",
+        description: "",
+        occurredAt: getLocalDateString(),
+      });
+      setSuccessMessage("Interaction added.");
+      setRefreshVersion((version) => version + 1);
+    } catch (error) {
+      setSubmitError(error.message || "Failed to add interaction.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onClose();
+      }}
+    >
+      <section
+        aria-labelledby="interaction-history-title"
+        aria-modal="true"
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-7"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2
+              className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl"
+              id="interaction-history-title"
+            >
+              Interaction history
+            </h2>
+            <p className="mt-1 truncate text-sm text-slate-500">
+              {contact.name}
+              {contact.email ? ` · ${contact.email}` : ""}
+            </p>
+          </div>
+          <button
+            aria-label="Close interaction history"
+            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            disabled={saving}
+            onClick={onClose}
+            type="button"
+          >
+            <X size={19} />
+          </button>
+        </div>
+
+        <form
+          className="mt-5 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
+          onSubmit={handleSubmit}
+        >
+          <h3 className="text-sm font-semibold text-slate-800">
+            Add an interaction
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium text-slate-700">Type</span>
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                onChange={(event) =>
+                  setForm({ ...form, type: event.target.value })
+                }
+                value={form.type}
+              >
+                {interactionTypes.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-700">
+                Occurrence date
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                onChange={(event) =>
+                  setForm({ ...form, occurredAt: event.target.value })
+                }
+                required
+                type="date"
+                value={form.occurredAt}
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-xs font-medium text-slate-700">Title</span>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+              maxLength={120}
+              onChange={(event) =>
+                setForm({ ...form, title: event.target.value })
+              }
+              required
+              type="text"
+              value={form.title}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-slate-700">
+              Description
+            </span>
+            <textarea
+              className="mt-1 min-h-20 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+              maxLength={2000}
+              onChange={(event) =>
+                setForm({ ...form, description: event.target.value })
+              }
+              value={form.description}
+            />
+          </label>
+          {submitError && (
+            <p className="text-sm text-rose-600" role="alert">
+              {submitError}
+            </p>
+          )}
+          {successMessage && (
+            <p className="text-sm text-emerald-700" role="status">
+              {successMessage}
+            </p>
+          )}
+          <div className="flex justify-end">
+            <button
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={saving}
+              type="submit"
+            >
+              <Plus size={16} />
+              {saving ? "Saving..." : "Add interaction"}
+            </button>
+          </div>
+        </form>
+
+        <section aria-label="Interaction entries" className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">
+              Previous interactions
+            </h3>
+            {!loading && !historyError && (
+              <span className="text-xs text-slate-500">
+                {sortedInteractions.length}{" "}
+                {sortedInteractions.length === 1 ? "entry" : "entries"}
+              </span>
+            )}
+          </div>
+          {loading ? (
+            <p className="py-8 text-center text-sm text-slate-500">
+              Loading interaction history...
+            </p>
+          ) : historyError ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-center">
+              <p className="text-sm text-rose-700" role="alert">
+                {historyError}
+              </p>
+              <button
+                className="mt-2 text-xs font-medium text-blue-700 hover:text-blue-800"
+                onClick={() =>
+                  setRefreshVersion((version) => version + 1)
+                }
+                type="button"
+              >
+                Retry
+              </button>
+            </div>
+          ) : sortedInteractions.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center">
+              <MessageSquare className="mx-auto text-slate-400" size={20} />
+              <p className="mt-2 text-sm font-medium text-slate-700">
+                No interactions recorded
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Add a call, email, meeting, message, or note above.
+              </p>
+            </div>
+          ) : (
+            <ol className="space-y-3">
+              {sortedInteractions.map((interaction) => {
+                const typeLabel =
+                  interactionTypes.find(
+                    (item) => item.value === interaction.type,
+                  )?.label || interaction.type;
+
+                return (
+                  <li
+                    className="rounded-xl border border-slate-200 px-4 py-3"
+                    key={interaction.id || interaction._id}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                          {typeLabel}
+                        </span>
+                        <h4 className="truncate text-sm font-semibold text-slate-800">
+                          {interaction.title}
+                        </h4>
+                      </div>
+                      <time
+                        className="shrink-0 text-xs text-slate-500"
+                        dateTime={interaction.occurredAt}
+                      >
+                        {formatInteractionDate(interaction.occurredAt)}
+                      </time>
+                    </div>
+                    {interaction.description && (
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
+                        {interaction.description}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+      </section>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -267,23 +887,35 @@ export default function Dashboard() {
   );
   const [contacts, setContacts] = useState([]);
   const [deletedContacts, setDeletedContacts] = useState([]);
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [dashboardError, setDashboardError] = useState("");
+  const [followUpsResult, setFollowUpsResult] = useState({
+    key: null,
+    tasks: [],
+    error: "",
+  });
+  const [pendingFollowUpsResult, setPendingFollowUpsResult] = useState({
+    version: null,
+    tasks: [],
+    error: "",
+  });
+  const [followUpStatus, setFollowUpStatus] = useState("pending");
+  const [followUpRefreshVersion, setFollowUpRefreshVersion] = useState(0);
+  const [followUpMutationId, setFollowUpMutationId] = useState(null);
+  const [followUpActionError, setFollowUpActionError] = useState("");
   const [contactsLoading, setContactsLoading] = useState(true);
   const [contactsError, setContactsError] = useState("");
-  const [summaryError, setSummaryError] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
+  const [showAddFollowUp, setShowAddFollowUp] = useState(false);
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [followUpContacts, setFollowUpContacts] = useState([]);
+  const [followUpContactsLoading, setFollowUpContactsLoading] = useState(false);
+  const [followUpContactsError, setFollowUpContactsError] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [uploadingPhotoId, setUploadingPhotoId] = useState(null);
   const [refreshData, setRefreshData] = useState(0);
-  const [summary, setSummary] = useState({
-    totalContacts: 0,
-    favoriteContacts: 0,
-    addedThisMonth: 0,
-    dueFollowUps: 0,
-  });
-  const [followUpPreview, setFollowUpPreview] = useState([]);
-
   const validSections = new Set(navigation.map(({ id }) => id));
   const requestedSection = searchParams.get("view");
   const activeSection = validSections.has(requestedSection)
@@ -334,6 +966,17 @@ export default function Dashboard() {
     updateTableParams({ search: value }, true);
   }
 
+  const followUpRequestKey = `${followUpStatus}:${followUpRefreshVersion}`;
+  const followUps = followUpsResult.tasks;
+  const followUpsLoading = followUpsResult.key !== followUpRequestKey;
+  const followUpsError = followUpsLoading ? "" : followUpsResult.error;
+  const pendingFollowUps = pendingFollowUpsResult.tasks;
+  const pendingFollowUpsLoading =
+    pendingFollowUpsResult.version !== followUpRefreshVersion;
+  const pendingFollowUpsError = pendingFollowUpsLoading
+    ? ""
+    : pendingFollowUpsResult.error;
+
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
@@ -354,7 +997,6 @@ export default function Dashboard() {
           : contactService.list({
               ...filters,
               ...(activeSection === "favorites" ? { favorite: true } : {}),
-              ...(activeSection === "followups" ? { followUpDays: 7 } : {}),
             });
 
       request
@@ -394,6 +1036,107 @@ export default function Dashboard() {
   ]);
 
   useEffect(() => {
+    let cancelled = false;
+    dashboardService
+      .getSummary()
+      .then((summary) => {
+        if (!cancelled) {
+          setDashboardSummary(summary);
+          setDashboardError("");
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load dashboard summary:", error);
+        if (!cancelled) {
+          setDashboardError(error.message || "Failed to load dashboard summary.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestKey = `${followUpStatus}:${followUpRefreshVersion}`;
+    const activeRequest = loadFollowUpTasks(followUpStatus);
+    activeRequest
+      .then((tasks) => {
+        if (!cancelled) {
+          setFollowUpsResult({ key: requestKey, tasks, error: "" });
+          if (followUpStatus === "pending") {
+            setPendingFollowUpsResult({
+              version: followUpRefreshVersion,
+              tasks,
+              error: "",
+            });
+          }
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load follow-ups:", error);
+        if (!cancelled) {
+          setFollowUpsResult({
+            key: requestKey,
+            tasks: [],
+            error: error.message || "Failed to load follow-ups.",
+          });
+          if (followUpStatus === "pending") {
+            setPendingFollowUpsResult({
+              version: followUpRefreshVersion,
+              tasks: [],
+              error: error.message || "Failed to load pending follow-ups.",
+            });
+          }
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [followUpStatus, followUpRefreshVersion]);
+
+  useEffect(() => {
+    if (
+      followUpStatus === "pending" ||
+      pendingFollowUpsResult.version === followUpRefreshVersion
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    loadFollowUpTasks("pending")
+      .then((tasks) => {
+        if (!cancelled) {
+          setPendingFollowUpsResult({
+            version: followUpRefreshVersion,
+            tasks,
+            error: "",
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load pending follow-ups:", error);
+        if (!cancelled) {
+          setPendingFollowUpsResult({
+            version: followUpRefreshVersion,
+            tasks: [],
+            error: error.message || "Failed to load pending follow-ups.",
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    followUpStatus,
+    followUpRefreshVersion,
+    pendingFollowUpsResult.version,
+  ]);
+
+  useEffect(() => {
     authService
       .getMe()
       .then((user) => {
@@ -416,47 +1159,145 @@ export default function Dashboard() {
     month: "long",
     day: "numeric",
   });
-  const dueCount = summary.dueFollowUps || 0;
-  const addedThisMonth = summary.addedThisMonth || 0;
+  const dueCount =
+    (dashboardSummary?.overdueFollowUps ?? 0) +
+    (dashboardSummary?.upcomingFollowUps ?? 0);
+  const addedThisMonth = dashboardSummary?.addedThisMonth ?? 0;
   const filteredContacts = activeSection === "trash" ? deletedContacts : contacts;
+  const sortedFollowUps = useMemo(
+    () =>
+      [...followUps].sort(
+        (a, b) => new Date(a.dueAt) - new Date(b.dueAt),
+      ),
+    [followUps],
+  );
+  const sortedPendingFollowUps = useMemo(
+    () =>
+      [...pendingFollowUps].sort(
+        (a, b) => new Date(a.dueAt) - new Date(b.dueAt),
+      ),
+    [pendingFollowUps],
+  );
+  const filteredFollowUps = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return sortedFollowUps;
+    return sortedFollowUps.filter((task) =>
+      [
+        task.title,
+        task.description,
+        task.contact?.name,
+        task.contact?.email,
+        task.contact?.company,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [search, sortedFollowUps]);
 
   const contactGroups = getContactGroups(filteredContacts);
   const availableLetters = new Set(Object.keys(contactGroups));
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      contactService.summary(),
-      contactService.list({
-        page: 1,
-        limit: 4,
-        sortBy: "followUp",
-        order: "asc",
-        followUpDays: 7,
-      }),
-    ])
-      .then(([nextSummary, upcoming]) => {
-        if (cancelled) return;
-        setSummary(nextSummary);
-        setFollowUpPreview(upcoming.contacts);
-        setSummaryError("");
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setSummaryError(error.message || "Failed to load dashboard summary.");
-        }
-      });
+  async function refreshDashboardSummary() {
+    try {
+      const summary = await dashboardService.getSummary();
+      setDashboardSummary(summary);
+      setDashboardError("");
+    } catch (error) {
+      console.error("Failed to refresh dashboard summary:", error);
+      setDashboardError(
+        error.message || "Failed to refresh dashboard summary.",
+      );
+    }
+  }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshData]);
+  async function openFollowUpModal() {
+    setShowAddFollowUp(true);
+    setFollowUpContacts([]);
+    setFollowUpContactsLoading(true);
+    setFollowUpContactsError("");
+    try {
+      const result = await contactService.list({
+        page: 1,
+        limit: 100,
+        sortBy: "name",
+        order: "asc",
+      });
+      setFollowUpContacts(result.contacts);
+    } catch (error) {
+      setFollowUpContactsError(
+        error.message || "Failed to load contacts for follow-up tasks.",
+      );
+    } finally {
+      setFollowUpContactsLoading(false);
+    }
+  }
+
+  async function createFollowUp(task) {
+    setFollowUpActionError("");
+    await followUpService.create(task);
+    setShowAddFollowUp(false);
+    setFollowUpStatus("pending");
+    setFollowUpRefreshVersion((version) => version + 1);
+    await refreshDashboardSummary();
+  }
+
+  async function updateFollowUpCompletion(task) {
+    const id = task.id || task._id;
+    if (!id || followUpMutationId) return;
+
+    setFollowUpMutationId(id);
+    setFollowUpActionError("");
+    try {
+      await followUpService.update(id, { completed: !task.completed });
+      if (task.completed) setFollowUpStatus("pending");
+      setFollowUpRefreshVersion((version) => version + 1);
+      await refreshDashboardSummary();
+    } catch (error) {
+      setFollowUpActionError(
+        error.message || "Failed to update the follow-up task.",
+      );
+    } finally {
+      setFollowUpMutationId(null);
+    }
+  }
+
+  async function deleteFollowUp(task) {
+    const id = task.id || task._id;
+    if (
+      !id ||
+      followUpMutationId ||
+      !window.confirm(`Delete the follow-up task "${task.title}"?`)
+    ) {
+      return;
+    }
+
+    setFollowUpMutationId(id);
+    setFollowUpActionError("");
+    try {
+      await followUpService.remove(id);
+      setFollowUpRefreshVersion((version) => version + 1);
+      await refreshDashboardSummary();
+    } catch (error) {
+      setFollowUpActionError(
+        error.message || "Failed to delete the follow-up task.",
+      );
+    } finally {
+      setFollowUpMutationId(null);
+    }
+  }
 
   async function handleExport() {
     setContactsError("");
+    if (activeSection === "followups") {
+      setContactsError("Exporting follow-up tasks is not available yet.");
+      return;
+    }
     try {
-      const view = ["favorites", "followups", "trash"].includes(activeSection) ? activeSection : "all";
+      const view = ["favorites", "trash"].includes(activeSection)
+        ? activeSection
+        : "all";
       const { blob, filename } = await contactService.exportCsv({
         view,
         search: search.trim(),
@@ -482,6 +1323,7 @@ export default function Dashboard() {
       if (result.imported > 0) {
         updateTableParams({ page: "1" });
         setRefreshData((value) => value + 1);
+        await refreshDashboardSummary();
       }
     } catch (error) {
       setContactsError(error.message);
@@ -507,11 +1349,35 @@ export default function Dashboard() {
   }
 
   async function addContact(contact) {
-    await contactService.create(contact);
+    const { followUpTask, ...contactDetails } = contact;
+    const createdContact = await contactService.create(contactDetails);
     updateTableParams({ page: "1" });
     setRefreshData((value) => value + 1);
     setContactsError("");
     setShowAddContact(false);
+
+    if (!followUpTask) {
+      refreshDashboardSummary();
+      return;
+    }
+
+    try {
+      await followUpService.create({
+        contactId: createdContact.id,
+        title: followUpTask.title,
+        dueAt: followUpTask.dueAt,
+      });
+      setFollowUpStatus("pending");
+      setFollowUpRefreshVersion((version) => version + 1);
+      refreshDashboardSummary();
+    } catch (error) {
+      refreshDashboardSummary();
+      setContactsError(
+        `Contact saved, but its follow-up task could not be created: ${
+          error.message || "Please try again."
+        }`,
+      );
+    }
   }
 
   async function updateContact(contact) {
@@ -536,6 +1402,7 @@ export default function Dashboard() {
       );
       setContactsError("");
       setRefreshData((value) => value + 1);
+      await refreshDashboardSummary();
     } catch (error) {
       setContactsError(error.message || "Failed to update contact.");
     }
@@ -548,6 +1415,8 @@ export default function Dashboard() {
       setDeletedContacts((current) => [deletedContact, ...current]);
       setContactsError("");
       setRefreshData((value) => value + 1);
+      setFollowUpRefreshVersion((version) => version + 1);
+      refreshDashboardSummary();
     } catch (error) {
       setContactsError(error.message || "Failed to move contact to trash.");
     }
@@ -560,6 +1429,8 @@ export default function Dashboard() {
       setContacts((current) => [restoredContact, ...current]);
       setContactsError("");
       setRefreshData((value) => value + 1);
+      setFollowUpRefreshVersion((version) => version + 1);
+      refreshDashboardSummary();
     } catch (error) {
       setContactsError(error.message || "Failed to restore contact.");
     }
@@ -690,6 +1561,11 @@ export default function Dashboard() {
               >
                 <Icon size={15} />
                 {label}
+                {id === "followups" && dueCount > 0 && (
+                  <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">
+                    {dueCount}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -710,9 +1586,17 @@ export default function Dashboard() {
             </div>
             <div className="flex shrink-0 gap-2">
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className={`inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 ${
+                  activeSection === "followups" ? "cursor-not-allowed opacity-50" : ""
+                }`}
+                disabled={activeSection === "followups"}
                 onClick={handleExport}
                 type="button"
+                title={
+                  activeSection === "followups"
+                    ? "Follow-up task export is not available yet"
+                    : undefined
+                }
               >
                 <ArrowDownToLine size={16} />
                 Export
@@ -738,12 +1622,27 @@ export default function Dashboard() {
                   Add contact
                 </button>
               )}
+              {activeSection === "followups" && (
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                  onClick={openFollowUpModal}
+                  type="button"
+                >
+                  <Plus size={17} />
+                  Add task
+                </button>
+              )}
             </div>
           </section>
 
-          {(contactsError || summaryError) && (
+          {contactsError && (
             <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
-              {contactsError || summaryError}
+              {contactsError}
+            </p>
+          )}
+          {dashboardError && (
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
+              Dashboard statistics could not be refreshed: {dashboardError}
             </p>
           )}
           {importResult && (
@@ -780,12 +1679,15 @@ export default function Dashboard() {
             className="mt-6 grid grid-cols-2 divide-x divide-slate-200 rounded-xl border border-slate-200 bg-white sm:grid-cols-4"
           >
             {[
-              { label: "Total contacts", value: summary.totalContacts },
+              {
+                label: "Total contacts",
+                value: dashboardSummary?.totalContacts ?? 0,
+              },
               { label: "Added this month", value: addedThisMonth },
               { label: "Follow-ups due", value: dueCount },
               {
                 label: "Favourites",
-                value: summary.favoriteContacts,
+                value: dashboardSummary?.favoriteContacts ?? 0,
               },
             ].map(({ label, value }) => (
               <article
@@ -805,20 +1707,37 @@ export default function Dashboard() {
               <div className="flex flex-col justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-900">
-                    {activeSection === "trash" ? "Deleted contacts" : "Contacts"}
+                    {activeSection === "trash"
+                      ? "Deleted contacts"
+                      : activeSection === "followups"
+                        ? "Follow-up tasks"
+                        : "Contacts"}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
-                    {pagination.total}{" "}
-                    {pagination.total === 1 ? "contact" : "contacts"}
+                    {activeSection === "followups"
+                      ? `${filteredFollowUps.length} ${
+                          filteredFollowUps.length === 1 ? "task" : "tasks"
+                        }`
+                      : `${pagination.total} ${
+                          pagination.total === 1 ? "contact" : "contacts"
+                        }`}
                   </p>
                 </div>
                 <label className="flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 px-3 text-slate-400 transition focus-within:border-blue-400 sm:w-64">
                   <Search size={16} />
                   <input
-                    aria-label="Search contacts"
+                    aria-label={
+                      activeSection === "followups"
+                        ? "Search follow-up tasks"
+                        : "Search contacts"
+                    }
                     className="w-full min-w-0 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search contacts..."
+                    placeholder={
+                      activeSection === "followups"
+                        ? "Search follow-ups..."
+                        : "Search contacts..."
+                    }
                     type="search"
                     value={search}
                   />
@@ -912,8 +1831,171 @@ export default function Dashboard() {
                 </label>
               </div>
 
+              {activeSection === "followups" && (
+                <div
+                  aria-label="Filter follow-up tasks"
+                  className="flex gap-1 border-b border-slate-200 px-4 py-3 sm:px-5"
+                  role="tablist"
+                >
+                  {[
+                    { id: "all", label: "All" },
+                    { id: "pending", label: "Pending" },
+                    { id: "completed", label: "Completed" },
+                  ].map(({ id, label }) => (
+                    <button
+                      aria-selected={followUpStatus === id}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                        followUpStatus === id
+                          ? "bg-blue-50 text-blue-700"
+                          : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                      }`}
+                      key={id}
+                      onClick={() => setFollowUpStatus(id)}
+                      role="tab"
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === "followups" && followUpActionError && (
+                <p
+                  className="mx-4 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-5"
+                  role="alert"
+                >
+                  {followUpActionError}
+                </p>
+              )}
+
               <div className="flex items-stretch">
                 <div className="min-w-0 flex-1">
+                  {activeSection === "followups" ? (
+                    followUpsLoading ? (
+                      <div className="px-5 py-12 text-center text-sm text-slate-500">
+                        Loading follow-up tasks...
+                      </div>
+                    ) : followUpsError ? (
+                      <div className="px-5 py-12 text-center">
+                        <p className="text-sm font-medium text-slate-700">
+                          Follow-up tasks could not be loaded
+                        </p>
+                        <p className="mt-1 text-xs text-rose-600" role="alert">
+                          {followUpsError}
+                        </p>
+                      </div>
+                    ) : filteredFollowUps.length === 0 ? (
+                      <div className="px-5 py-12 text-center">
+                        <p className="text-sm font-medium text-slate-700">
+                          {search.trim()
+                            ? "No follow-up tasks found"
+                            : `No ${followUpStatus} follow-up tasks`}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {search.trim()
+                            ? "Try another search."
+                            : followUpStatus === "completed"
+                              ? "Completed tasks will appear here."
+                              : "Create a task to keep your next steps visible."}
+                        </p>
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-slate-100">
+                        {filteredFollowUps.map((task) => {
+                          const dueDate = String(task.dueAt).slice(0, 10);
+                          const contactName =
+                            task.contact?.name || "Unknown contact";
+                          const contactDetails = [
+                            task.contact?.email,
+                            task.contact?.company,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ");
+                          const statusLabel = task.completed
+                            ? "Completed"
+                            : dueDate < today
+                              ? "Overdue"
+                              : "Upcoming";
+                          const statusClass = task.completed
+                            ? "bg-emerald-50 text-emerald-700"
+                            : dueDate < today
+                              ? "bg-rose-50 text-rose-700"
+                              : "bg-blue-50 text-blue-700";
+
+                          return (
+                            <li
+                              className="flex flex-col gap-3 px-4 py-3 hover:bg-slate-50 sm:flex-row sm:items-center sm:px-5"
+                              key={task.id || task._id}
+                            >
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-600">
+                                {getInitials(contactName)}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-medium text-slate-800">
+                                    {task.title}
+                                  </p>
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 truncate text-xs text-slate-500">
+                                  {contactName}
+                                  {contactDetails ? ` · ${contactDetails}` : ""}
+                                </p>
+                                {task.description && (
+                                  <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                                    {task.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between gap-3 sm:ml-auto sm:justify-end">
+                                <span className="shrink-0 text-xs text-slate-500">
+                                  Due {formatFollowUp(dueDate)}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    aria-label={
+                                      task.completed
+                                        ? `Reopen ${task.title}`
+                                        : `Mark ${task.title} complete`
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={Boolean(followUpMutationId)}
+                                    onClick={() =>
+                                      updateFollowUpCompletion(task)
+                                    }
+                                    type="button"
+                                  >
+                                    {task.completed ? (
+                                      <RotateCcw size={14} />
+                                    ) : (
+                                      <Check size={14} />
+                                    )}
+                                    {task.completed ? "Reopen" : "Complete"}
+                                  </button>
+                                  <button
+                                    aria-label={`Delete ${task.title}`}
+                                    className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={Boolean(followUpMutationId)}
+                                    onClick={() => deleteFollowUp(task)}
+                                    title="Delete task"
+                                    type="button"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )
+                  ) : (
+                    <>
                   {Object.entries(contactGroups).map(([letter, group]) => (
                     <section
                       aria-label={`${letter} contacts`}
@@ -979,20 +2061,6 @@ export default function Dashboard() {
                               <p className="text-xs text-slate-600">
                                 {contact.lastContact}
                               </p>
-                              {contact.followUp && (
-                                <p
-                                  className={`mt-1 flex items-center gap-1 text-[11px] ${
-                                    contact.followUp < today
-                                      ? "font-medium text-rose-600"
-                                      : "text-slate-500"
-                                  }`}
-                                >
-                                  <Clock3 size={11} />
-                                  {contact.followUp < today
-                                    ? "Overdue"
-                                    : formatFollowUp(contact.followUp)}
-                                </p>
-                              )}
                             </div>
                             {activeSection === "trash" ? (
                               <button
@@ -1017,6 +2085,15 @@ export default function Dashboard() {
                                   type="button"
                                 >
                                   <Pencil size={16} />
+                                </button>
+                                <button
+                                  aria-label={`View interaction history for ${contact.name}`}
+                                  className="rounded p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-700"
+                                  onClick={() => setSelectedContact(contact)}
+                                  title="Interaction history"
+                                  type="button"
+                                >
+                                  <MessageSquare size={17} />
                                 </button>
                                 <button
                                   aria-label={
@@ -1075,62 +2152,73 @@ export default function Dashboard() {
                       </p>
                     </div>
                   ) : null}
+                    </>
+                  )}
                 </div>
 
-                <nav
-                  aria-label="Jump to contact letter"
-                  className="hidden w-8 shrink-0 flex-col items-center justify-center border-l border-slate-100 py-2 lg:flex"
-                >
-                  {alphabet.map((letter) => (
+                {activeSection !== "followups" && (
+                  <nav
+                    aria-label="Jump to contact letter"
+                    className="hidden w-8 shrink-0 flex-col items-center justify-center border-l border-slate-100 py-2 lg:flex"
+                  >
+                    {alphabet.map((letter) => (
+                      <button
+                        aria-label={`Jump to ${letter}`}
+                        className={`flex h-[18px] w-full items-center justify-center text-[10px] font-medium ${
+                          availableLetters.has(letter)
+                            ? "text-blue-700 hover:bg-blue-50"
+                            : "cursor-default text-slate-300"
+                        }`}
+                        disabled={!availableLetters.has(letter)}
+                        key={letter}
+                        onClick={() =>
+                          document
+                            .getElementById(`contact-letter-${letter}`)
+                            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                        }
+                        type="button"
+                      >
+                        {letter}
+                      </button>
+                    ))}
+                  </nav>
+                )}
+              </div>
+              {activeSection === "followups" ? (
+                <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500 sm:px-5">
+                  {filteredFollowUps.length}{" "}
+                  {filteredFollowUps.length === 1 ? "task" : "tasks"}
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:px-5">
+                  <span className="text-xs text-slate-500">
+                    {pagination.total === 0
+                      ? "0 contacts"
+                      : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, pagination.total)} of ${pagination.total} contacts`}
+                  </span>
+                  <div className="flex items-center gap-2">
                     <button
-                      aria-label={`Jump to ${letter}`}
-                      className={`flex h-[18px] w-full items-center justify-center text-[10px] font-medium ${
-                        availableLetters.has(letter)
-                          ? "text-blue-700 hover:bg-blue-50"
-                          : "cursor-default text-slate-300"
-                      }`}
-                      disabled={!availableLetters.has(letter)}
-                      key={letter}
-                      onClick={() =>
-                        document
-                          .getElementById(`contact-letter-${letter}`)
-                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                      }
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={page <= 1 || contactsLoading}
+                      onClick={() => updateTableParams({ page: page - 1 })}
                       type="button"
                     >
-                      {letter}
+                      Previous
                     </button>
-                  ))}
-                </nav>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:px-5">
-                <span className="text-xs text-slate-500">
-                  {pagination.total === 0
-                    ? "0 contacts"
-                    : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, pagination.total)} of ${pagination.total} contacts`}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={page <= 1 || contactsLoading}
-                    onClick={() => updateTableParams({ page: page - 1 })}
-                    type="button"
-                  >
-                    Previous
-                  </button>
-                  <span className="text-xs text-slate-500">
-                    Page {page} of {Math.max(1, pagination.totalPages)}
-                  </span>
-                  <button
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={page >= pagination.totalPages || contactsLoading}
-                    onClick={() => updateTableParams({ page: page + 1 })}
-                    type="button"
-                  >
-                    Next
-                  </button>
+                    <span className="text-xs text-slate-500">
+                      Page {page} of {Math.max(1, pagination.totalPages)}
+                    </span>
+                    <button
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={page >= pagination.totalPages || contactsLoading}
+                      onClick={() => updateTableParams({ page: page + 1 })}
+                      type="button"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <aside className="rounded-xl border border-slate-200 bg-white">
@@ -1147,48 +2235,66 @@ export default function Dashboard() {
               </div>
 
               <div className="divide-y divide-slate-100 px-4">
-                {followUpPreview
-                  .map((contact) => (
-                    <article
-                      className="flex items-center gap-3 py-3"
-                      key={contact.id}
-                    >
-                      <span
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-medium text-slate-600"
-                      >
-                        {getInitials(contact.name)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-slate-800">
-                          {contact.name}
-                        </p>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                          {contact.company || "Personal connection"}
-                        </p>
-                      </div>
-                      <span
-                        className={`shrink-0 text-[11px] ${
-                          contact.followUp < today
-                            ? "font-medium text-rose-600"
-                            : "text-slate-500"
-                        }`}
-                      >
-                        {contact.followUp < today
-                          ? "Overdue"
-                          : formatFollowUp(contact.followUp)}
-                      </span>
-                    </article>
-                  ))}
-                {followUpPreview.length === 0 && (
+                {pendingFollowUpsLoading ? (
+                  <p className="py-6 text-center text-xs text-slate-500">
+                    Loading follow-ups...
+                  </p>
+                ) : pendingFollowUpsError ? (
+                  <p className="py-6 text-center text-xs text-rose-600" role="alert">
+                    Follow-ups could not be loaded: {pendingFollowUpsError}
+                  </p>
+                ) : sortedPendingFollowUps.length === 0 ? (
                   <div className="px-2 py-8 text-center">
                     <Check className="mx-auto text-slate-400" size={20} />
                     <p className="mt-2 text-sm font-medium text-slate-700">
                       No follow-ups scheduled
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      Add a date to a contact to see it here.
+                      Your upcoming tasks will appear here.
                     </p>
                   </div>
+                ) : (
+                  sortedPendingFollowUps.slice(0, 4).map((task) => {
+                    const dueDate = String(task.dueAt).slice(0, 10);
+                    const contactName = task.contact?.name || "Unknown contact";
+
+                    return (
+                      <article
+                        className="flex items-center gap-3 py-3"
+                        key={task.id || task._id}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-medium text-slate-600">
+                          {getInitials(contactName)}
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-slate-800">
+                            {task.title}
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                            {contactName}
+                            {[
+                              task.contact?.email,
+                              task.contact?.company,
+                            ]
+                              .filter(Boolean)
+                              .map((detail) => ` · ${detail}`)
+                              .join("")}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`shrink-0 text-[11px] ${
+                            dueDate < today
+                              ? "font-medium text-rose-600"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          {dueDate < today ? "Overdue" : formatFollowUp(dueDate)}
+                        </span>
+                      </article>
+                    );
+                  })
                 )}
               </div>
 
@@ -1218,6 +2324,22 @@ export default function Dashboard() {
             setEditingContact(null);
           }}
           onSave={editingContact ? updateContact : addContact}
+        />
+      )}
+      {showAddFollowUp && (
+        <FollowUpModal
+          contacts={followUpContacts}
+          contactsError={followUpContactsError}
+          contactsLoading={followUpContactsLoading}
+          onClose={() => setShowAddFollowUp(false)}
+          onSave={createFollowUp}
+        />
+      )}
+      {selectedContact && (
+        <InteractionHistoryModal
+          contact={selectedContact}
+          key={selectedContact.id || selectedContact._id}
+          onClose={() => setSelectedContact(null)}
         />
       )}
     </div>
